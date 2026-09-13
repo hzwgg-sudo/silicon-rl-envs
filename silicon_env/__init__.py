@@ -11,6 +11,7 @@ from silicon_env.types import (
     Provenance,
     StepStatus,
 )
+from silicon_env.workspace import EpisodeWorkspace, WorkspaceError, WorkspaceManager
 
 __version__ = "0.1.0"
 
@@ -19,6 +20,7 @@ __all__ = [
     "Action",
     "Budget",
     "ContractError",
+    "EpisodeWorkspace",
     "GradeResult",
     "GradeStatus",
     "GraderConfig",
@@ -28,4 +30,6 @@ __all__ = [
     "StepResult",
     "StepStatus",
     "TaskSpec",
+    "WorkspaceError",
+    "WorkspaceManager",
 ]
