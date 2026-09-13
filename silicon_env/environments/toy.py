@@ -117,6 +117,7 @@ class ToyEnvironment(BaseEnvironment):
         target_text: str = TOY_TARGET_TEXT,
         initial_text: str = TOY_INITIAL_TEXT,
         clock: ClockFn | None = None,
+        enable_trace: bool = True,
     ) -> None:
         if not isinstance(target_text, str):
             raise ContractError("target_text must be a string")
@@ -134,6 +135,7 @@ class ToyEnvironment(BaseEnvironment):
             work_root=root,
             runner=ToolRunner(tools={}),
             clock=clock,
+            enable_trace=enable_trace,
         )
         self._target_text = target_text
 

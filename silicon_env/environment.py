@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import time
+import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -75,6 +76,9 @@ class BaseEnvironment(ABC):
         tool failure until tools are registered).
     :param clock: monotonic seconds source for budgets (tests inject fakes).
     :param obs_tail_limit: per-field cap for observation tails.
+    :param enable_trace: when True (default), each episode records a
+        versioned JSONL trace + manifest under ``work_root/runs/<run_id>``.
+        Tracing never alters stepping semantics; I/O failures are ignored.
     """
 
     def __init__(
@@ -85,6 +89,7 @@ class BaseEnvironment(ABC):
         runner: ToolRunner | None = None,
         clock: ClockFn | None = None,
         obs_tail_limit: int = MAX_OBS_TAIL_CHARS,
+        enable_trace: bool = True,
     ) -> None:
         template = Path(template_dir)
         if not template.is_dir():
@@ -121,6 +126,11 @@ class BaseEnvironment(ABC):
         self._done: bool = False
         self._closed: bool = False
         self._has_reset: bool = False
+        self._enable_trace = bool(enable_trace)
+        self._recorder = None  # TraceRecorder | None
+        self._run_dir: Path | None = None
+        self._trace_finalized: bool = True
+        self._pending_submit_grade = None  # GradeResult | None
 
     # -- state views ----------------------------------------------------
 
@@ -152,9 +162,75 @@ class BaseEnvironment(ABC):
     def active(self) -> bool:
         return self._has_reset and not self._done and not self._closed
 
+    @property
+    def run_dir(self) -> Path | None:
+        """Per-episode trace run directory (None when tracing is disabled)."""
+        return self._run_dir
+
+    @property
+    def trace_recorder(self):  # TraceRecorder | None
+        return self._recorder
+
+    @property
+    def trace_path(self) -> Path | None:
+        if self._recorder is None:
+            return None
+        return self._recorder.trace_path
+
+    @property
+    def manifest_path(self) -> Path | None:
+        if self._recorder is None:
+            return None
+        return self._recorder.manifest_path
+
     # -- lifecycle ------------------------------------------------------
 
     def reset(self, task: TaskSpec, seed: int | None = None) -> Observation:
+        """Start a fresh episode, discarding any previous workspace."""
+        prev_recorder = self._recorder
+        prev_open = (
+            self._enable_trace
+            and prev_recorder is not None
+            and not self._trace_finalized
+            and self._has_reset
+        )
+        prev_snapshot = self._trace_snapshot() if prev_open else {}
+        obs = self._reset_inner(task, seed)
+        if prev_open:
+            assert prev_recorder is not None
+            try:
+                prev_recorder.finalize_incomplete("superseded by reset", prev_snapshot)
+            except Exception:
+                pass
+            self._trace_finalized = True
+        self._trace_start()
+        return obs
+
+    def step(self, action: Action) -> StepResult:
+        """Dispatch one action; invalid content becomes ``invalid_submission``."""
+        result = self._step_inner(action)
+        self._trace_after_step(action, result)
+        pending, self._pending_submit_grade = self._pending_submit_grade, None
+        if pending is not None:
+            self._trace_after_submit(pending)
+        return result
+
+    def submit(self) -> GradeResult:
+        """Grade the current workspace; terminates the episode."""
+        result = self._submit_inner()
+        self._trace_after_submit(result)
+        return result
+
+    def close(self) -> None:
+        """Release the episode workspace. Idempotent."""
+        self._finalize_trace_if_open(reason="closed without submit")
+        if self._closed:
+            return
+        self._cleanup_workspace()
+        self._closed = True
+        self._done = True
+
+    def _reset_inner(self, task: TaskSpec, seed: int | None = None) -> Observation:
         """Start a fresh episode, discarding any previous workspace."""
         if self._closed:
             raise EnvironmentError("environment is closed; cannot reset")
@@ -184,6 +260,7 @@ class BaseEnvironment(ABC):
         self._step_count = 0
         self._done = False
         self._has_reset = True
+        self._pending_submit_grade = None
 
         text = self._initial_text()
         return Observation(
@@ -197,8 +274,8 @@ class BaseEnvironment(ABC):
             duration_s=0.0,
         )
 
-    def step(self, action: Action) -> StepResult:
-        """Dispatch one action; invalid content becomes ``invalid_submission``."""
+    def _step_inner(self, action: Action) -> StepResult:
+        """Dispatch one action (traced by the :meth:`step` wrapper)."""
         self._require_active("step")
         assert self._task is not None and self._tracker is not None
         if not isinstance(action, Action):
@@ -238,8 +315,8 @@ class BaseEnvironment(ABC):
             return self._invalid_result(action, f"unsupported action_type {action.action_type!r}")
         return handler(action)
 
-    def submit(self) -> GradeResult:
-        """Grade the current workspace; terminates the episode."""
+    def _submit_inner(self) -> GradeResult:
+        """Grade the current workspace (traced by the :meth:`submit` wrapper)."""
         self._require_active("submit")
         assert self._task is not None
         result = self._grade()
@@ -247,13 +324,107 @@ class BaseEnvironment(ABC):
         self._done = True
         return result
 
-    def close(self) -> None:
-        """Release the episode workspace. Idempotent."""
-        if self._closed:
+    # -- trace hooks ----------------------------------------------------
+
+    def _trace_start(self) -> None:
+        """Create the per-episode recorder and log the reset event."""
+        if not self._enable_trace:
             return
-        self._cleanup_workspace()
-        self._closed = True
-        self._done = True
+        try:
+            from silicon_env.trace import TraceRecorder
+
+            run_id = f"run_{uuid.uuid4().hex[:12]}"
+            run_dir = self._work_root / "runs" / run_id
+            recorder = TraceRecorder(run_dir, task=self._task, seed=self._seed, run_id=run_id)
+            snapshot = self._tracker.snapshot() if self._tracker is not None else {}
+            immutable = ""
+            if self._workspace is not None:
+                try:
+                    immutable = self._workspace.immutable_hash
+                except Exception:
+                    immutable = ""
+            initial = self._initial_text()
+            from silicon_env.task import Observation as _Obs
+
+            obs = _Obs(
+                schema_version=1,
+                step_index=0,
+                tool_name="reset",
+                exit_code=0,
+                stdout_tail=sanitize_tail(initial, limit=self._obs_tail_limit),
+                stderr_tail="",
+                timed_out=False,
+                duration_s=0.0,
+            )
+            recorder.record_reset(obs, snapshot, immutable_hash=immutable)
+            self._recorder = recorder
+            self._run_dir = run_dir
+            self._trace_finalized = False
+            self._pending_submit_grade = None
+        except Exception:
+            self._recorder = None
+            self._run_dir = None
+            self._trace_finalized = True
+
+    def _trace_snapshot(self) -> dict[str, Any]:
+        try:
+            if self._tracker is not None:
+                return self._tracker.snapshot()
+        except Exception:
+            pass
+        return {}
+
+    def _trace_after_step(self, action: Action, result: StepResult) -> None:
+        recorder = self._recorder
+        if not self._enable_trace or recorder is None or self._trace_finalized:
+            return
+        try:
+            log_dir = self._work_root / "logs" / f"step_{result.step_index}"
+            artifact_files: list[Path] = []
+            for name in ("stdout.log", "stderr.log"):
+                candidate = log_dir / name
+                try:
+                    if candidate.is_file() and not candidate.is_symlink():
+                        artifact_files.append(candidate)
+                except OSError:
+                    continue
+            recorder.record_step(
+                action,
+                result,
+                self._trace_snapshot(),
+                artifact_files=tuple(artifact_files),
+            )
+        except Exception:
+            pass
+
+    def _trace_after_submit(self, grade: GradeResult) -> None:
+        recorder = self._recorder
+        if not self._enable_trace or recorder is None or self._trace_finalized:
+            return
+        try:
+            recorder.record_submit(grade, self._trace_snapshot())
+            recorder.finalize(
+                status=grade.status.value,
+                passed=bool(grade.passed),
+                budget_snapshot=self._trace_snapshot(),
+                message=grade.message,
+            )
+            self._trace_finalized = True
+        except Exception:
+            pass
+
+    def _finalize_trace_if_open(self, *, reason: str) -> None:
+        recorder = self._recorder
+        if not self._enable_trace or recorder is None or self._trace_finalized:
+            return
+        if not self._has_reset:
+            return
+        try:
+            recorder.finalize_incomplete(reason, self._trace_snapshot())
+        except Exception:
+            pass
+        finally:
+            self._trace_finalized = True
 
     # -- hooks ----------------------------------------------------------
 
@@ -387,6 +558,7 @@ class BaseEnvironment(ABC):
         grade = self._grade()
         grade.validate()
         self._done = True
+        self._pending_submit_grade = grade
         passed = grade.status == GradeStatus.PASS
         obs = self._obs(
             action,

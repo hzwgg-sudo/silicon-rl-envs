@@ -4,6 +4,7 @@ from silicon_env.environment import BaseEnvironment, Environment, EnvironmentErr
 from silicon_env.grader import GradeResult, StepResult
 from silicon_env.runner import RunnerError, RunResult, ToolRunner
 from silicon_env.task import Action, Observation, TaskSpec
+from silicon_env.trace import TraceError, TraceRecorder, read_events, read_manifest, verify_run
 from silicon_env.types import (
     Budget,
     ContractError,
@@ -38,6 +39,11 @@ __all__ = [
     "StepStatus",
     "TaskSpec",
     "ToolRunner",
+    "TraceError",
+    "TraceRecorder",
     "WorkspaceError",
     "WorkspaceManager",
+    "read_events",
+    "read_manifest",
+    "verify_run",
 ]
