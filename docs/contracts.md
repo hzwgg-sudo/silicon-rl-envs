@@ -38,6 +38,14 @@ non-empty `unit` (e.g. `"um^2"`, `"ns"`, `"W"`). Every result preserves
 - `seed` satisfies `0 <= seed < 2**63`.
 - `budgets` values are positive and finite; `max_tool_calls` must not
   exceed `max_steps` (at most one tool call per step).
+- Budget enforcement (`silicon_env.budget.BudgetTracker`, M0-05): every
+  action -- valid or invalid -- consumes one step; invalid actions never
+  consume a tool call. Every dispatched tool attempt (success or
+  failure, including launch failure) consumes one step plus one tool
+  call, reserved *before* dispatch. Allowances are checked before
+  dispatch; an exhausted episode must not launch additional tools and
+  per-call deadlines never exceed the remaining wall time. Exhaustion
+  priority: `max_wallclock_s`, then `max_steps`, then `max_tool_calls`.
 - `grader.timeout_s` must fit inside `budgets.max_wallclock_s`.
 - `read_only` tasks must not allow `write_file`/`run_tool` and must not
   declare `allowed_edit_paths`. `submit` is still allowed (it does not
