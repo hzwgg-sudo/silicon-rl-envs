@@ -1,0 +1,101 @@
+# Execution backends: trusted local vs restricted container (M0-09)
+
+Two backends implement the same runner protocol (named tool + argv array
+in, `RunResult` with `SUCCESS` / `TOOL_FAILURE` / `TIMEOUT` /
+`INFRA_ERROR` out). Pick per trust level of the code being executed.
+
+## Trusted local mode (`silicon_env.runner.ToolRunner`)
+
+Runs pre-registered named tools directly on the host: explicit `cwd`,
+env allowlist, monotonic deadlines, process-group cleanup, capped
+`stdout.log` / `stderr.log` capture.
+
+Use it **only** for already-vetted commands (graders, harness helpers,
+deterministic checks). It provides **no** filesystem, network, or
+memory isolation beyond the env allowlist and output caps, and must
+never execute untrusted candidate code.
+
+## Restricted container mode (`silicon_env.runners.container`)
+
+A Docker-compatible Linux backend for untrusted candidate code. One
+backend only (no scheduler, remote, VM-grade isolation, or image
+building).
+
+```python
+from silicon_env.runners.container import ContainerMount, ContainerRunner
+
+runner = ContainerRunner(tools={"python": ["python3"]})
+result = runner.run(
+    "python",
+    ["-c", "print('hi')"],
+    mounts=[
+        ContainerMount("/path/to/task-inputs", "/task/inputs", readonly=True),
+        ContainerMount("/path/to/candidate-out", "/task/outputs", readonly=False),
+    ],
+    log_dir="/path/to/logs",
+    timeout_s=60,
+)
+```
+
+### Hardening (every `docker run`)
+
+| Property | Flag |
+| -------- | ---- |
+| Pinned image, never auto-pulled/built | `--pull never` + allowlist (`PINNED_IMAGES`; tag or `@sha256:` digest; `:latest` rejected) |
+| No network | `--network none` |
+| Non-root | `--user 65532:65532` |
+| Read-only root | `--read-only` (+ `--init`) |
+| No capabilities | `--cap-drop ALL` |
+| Process limit | `--pids-limit 128` |
+| Memory limit | `--memory 512m` / `--memory-swap 512m` |
+| CPU limit | `--cpus 1.0` |
+| Explicit writable scratch | `--tmpfs /scratch:rw,nosuid,nodev,exec,size=64m` (+ throwaway `/tmp` tmpfs) |
+| Always cleaned up | `--rm` + `docker rm -f` on timeout/cancel |
+
+Defaults are tunable at construction (`memory=`, `cpus=`,
+`pids_limit=`, `user=`, ...); `provenance()` reports the effective
+values.
+
+### Mount allowlist
+
+Only declared `ContainerMount(host_path, container_path, readonly)`
+entries are mounted (`:ro` inputs, `:rw` candidate output). The runner
+**refuses** to mount host `/`, `/etc`, `/var/run` (incl. the Docker
+socket), the host home directory, and `$SILICON_EVAL_SECRETS_DIR` when
+set -- misuse raises `ContainerRunnerError` before Docker is touched.
+Container paths must be absolute and free of `..`.
+
+### Result mapping
+
+- exit 0 -> `SUCCESS`; nonzero tool exit -> `TOOL_FAILURE`
+  (exit 137 notes a SIGKILL / possible OOM in `error`).
+- deadline overrun -> `TIMEOUT` (`timed_out=True`); the container is
+  force-removed so no live container leaks.
+- missing `docker` binary, missing image, daemon errors, and
+  architecture mismatches (`exec format error`, docker 125/126/127)
+  -> `INFRA_ERROR` with `launched=False` -- never success.
+
+### Provenance
+
+`runner.provenance()` returns backend identity, the pinned image ref,
+the image allowlist, effective limits, and the security posture as a
+JSON-serializable dict. Attach `image` + `limits` to trace manifests /
+`toolchain_refs` so runs record exactly what executed the candidate.
+
+### Opt-in integration checks (Linux + Docker only)
+
+```bash
+SILICON_RUN_DOCKER_TESTS=1 pytest tests/test_container_runner.py
+```
+
+Covers: host sentinel outside mounts unreadable, read-only input not
+writable, no network egress, timeout leaves no live container. Gated
+behind `SILICON_RUN_DOCKER_TESTS=1` with a clean skip when Docker is
+absent (default CI / macOS runs only the no-Docker unit tests).
+
+## Non-goals
+
+No VM-grade isolation, no scheduler, no remote execution, no image
+building, and no guarantee that Docker fits an 8 GB laptop -- the
+container backend is opt-in; the default test suite stays
+Docker/network-free.

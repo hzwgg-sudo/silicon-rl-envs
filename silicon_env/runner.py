@@ -8,6 +8,13 @@ Scope notes (non-goals): local execution only -- no Docker, no remote
 exec, no tool-specific output parsing, and no hard memory isolation on
 macOS (address-space limits are not enforceable portably here).
 
+This is the *trusted local* backend: it runs tools directly on the host
+and must only execute already-vetted commands. Untrusted candidate code
+belongs in the restricted Linux container backend
+(``silicon_env.runners.container.ContainerRunner``), which enforces
+pinned images, no network, a non-root UID, a read-only root, dropped
+capabilities, and explicit resource limits -- see ``docs/execution.md``.
+
 Standard library only, Python >= 3.10 compatible. POSIX process groups
 via ``start_new_session`` + ``os.killpg`` (macOS-safe).
 """
