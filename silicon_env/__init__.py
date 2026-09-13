@@ -1,6 +1,7 @@
 """Silicon RL Envs: RL environments for semiconductor engineering tasks."""
 
 from silicon_env.grader import GradeResult, StepResult
+from silicon_env.runner import RunnerError, RunResult, ToolRunner
 from silicon_env.task import Action, Observation, TaskSpec
 from silicon_env.types import (
     Budget,
@@ -27,9 +28,12 @@ __all__ = [
     "Metric",
     "Observation",
     "Provenance",
+    "RunResult",
+    "RunnerError",
     "StepResult",
     "StepStatus",
     "TaskSpec",
+    "ToolRunner",
     "WorkspaceError",
     "WorkspaceManager",
 ]
