@@ -1,5 +1,6 @@
 """Silicon RL Envs: RL environments for semiconductor engineering tasks."""
 
+from silicon_env.environment import BaseEnvironment, Environment, EnvironmentError
 from silicon_env.grader import GradeResult, StepResult
 from silicon_env.runner import RunnerError, RunResult, ToolRunner
 from silicon_env.task import Action, Observation, TaskSpec
@@ -19,6 +20,9 @@ __version__ = "0.1.0"
 __all__ = [
     "__version__",
     "Action",
+    "BaseEnvironment",
+    "Environment",
+    "EnvironmentError",
     "Budget",
     "ContractError",
     "EpisodeWorkspace",
