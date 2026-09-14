@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "status": "TBD-unverified",
+  "task_id": "gcd-nangate45",
+  "task_version": "0.1.0",
+  "orfs_commit": "036d106273e66855cd5214d49518fd0f0df7de61",
+  "image_pinned_ref": "docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61",
+  "candidate": {
+    "PLACE_DENSITY": 0.3,
+    "CORE_UTILIZATION": 55.0
+  },
+  "candidate_hash": "TBD-unverified",
+  "protected_hash": "TBD-unverified",
+  "metrics": {
+    "area_um2": null,
+    "wns_ns": null,
+    "tns_ns": null,
+    "routed_ok": false,
+    "drc_count": null,
+    "unconstrained_paths": null,
+    "valid": false
+  },
+  "tolerances": {
+    "area_rel": 0.01,
+    "wns_abs_ns": 0.005,
+    "tns_abs_ns": 0.01
+  },
+  "tolerances_note": "PROVISIONAL pending real three-run measurement on the Linux route (see scripts/generate_openroad_baseline.py). Tight initial values; justify empirically from observed run-to-run spread, never loosen to make a drifted run pass.",
+  "provenance": {
+    "run_ids": [],
+    "seeds": [],
+    "tool_versions": null,
+    "generator": "scripts/generate_openroad_baseline.py",
+    "note": "No real three-run capture has been measured. This placeholder is NOT usable for scoring: validate_baseline rejects it (fail closed). Real runs are blocked on the Mac dev host (no EDA/Linux/Docker daemon); capture them on the Linux route with the reproduction command below."
+  },
+  "runs": [],
+  "resources": {
+    "wallclock_s": null,
+    "peak_rss_gb": null,
+    "status": "TBD-unverified",
+    "notes": "Measured resource usage is recorded here by the generator during a real three-run capture; no values are claimed until then."
+  },
+  "generation": {
+    "procedure": "Run the stock GCD candidate three times in fresh scratch workspaces under the identical pinned profile, verify all runs valid and within tolerances, then write this file atomically.",
+    "reproduction_command": "python scripts/generate_openroad_baseline.py --orfs-checkout /path/to/orfs --output silicon_env/environments/openroad/tasks/gcd/baseline.json --seed 0 --timeout-s 7200",
+    "blocked_reason": "Dev host is Mac arm64/8GB with the container daemon stopped; the pinned image is linux/amd64 only, so no EDA run was attempted here. No metric values are fabricated in this record."
+  }
+}

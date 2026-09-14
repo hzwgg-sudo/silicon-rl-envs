@@ -85,6 +85,35 @@ a real run exists.
 container daemon stopped) cannot run this profile, so no pull, build, or
 flow run was attempted here.
 
+## Reference baseline: TBD-unverified (M1-05, blocked on Mac)
+
+`tasks/gcd/baseline.json` is an honest **TBD-unverified placeholder**:
+null metrics, provisional tight tolerances (`area_rel 0.01`,
+`wns_abs_ns 0.005 ns`, `tns_abs_ns 0.01 ns`), and the exact
+reproduction command — no measured values are fabricated.
+`baseline.py:validate_baseline` rejects it for scoring use (fail
+closed); any source/config/toolchain change invalidates a verified
+record via the input/tool fingerprint (pins + stock-candidate hash +
+protected-asset hash; runtimes/timestamps never participate).
+
+Baseline procedure (Linux route; blocked on the Mac dev host, which
+cannot run the linux/amd64 pinned image):
+
+```bash
+python scripts/generate_openroad_baseline.py \
+    --orfs-checkout /path/to/orfs \
+    --output silicon_env/environments/openroad/tasks/gcd/baseline.json \
+    --seed 0 --timeout-s 7200
+```
+
+The generator runs the stock candidate three times in fresh scratch
+workspaces under the identical pinned profile, requires all runs
+valid and within tolerances, writes the record atomically, and
+records measured wallclock/peak-RSS. It exits nonzero on validity
+failure or metric drift and writes nothing in that case. Default
+tests (`tests/test_openroad_baseline.py`) inject fakes and need no
+EDA/Docker/network/keys.
+
 ## Verification status (2026-09-14, Mac arm64/8GB, daemon stopped)
 
 - `git ls-remote` + GitHub API: ORFS tag `26Q2` -> commit `036d1062…`,
