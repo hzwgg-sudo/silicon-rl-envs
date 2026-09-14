@@ -5,12 +5,12 @@ rejection, missing-Docker infra error, provenance. These MUST pass on
 machines without Docker (e.g. M1 Mac CI).
 
 Opt-in integration tests (real filesystem / network / timeout isolation
-checks) run only when ``SILICON_RUN_DOCKER_TESTS=1`` is set AND a
-``docker`` binary resolves; otherwise they skip cleanly.
+checks) run only when ``SILICON_RUN_DOCKER_TESTS=1`` is set. Missing
+Docker, daemon, or image fails an explicitly requested run.
 """
 
+import json
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -288,37 +288,50 @@ def tmpfs_args(cmd: list[str]) -> list[str]:
 
 
 # --- opt-in integration tests (need Linux + Docker) ---------------------------
-# Gate: SILICON_RUN_DOCKER_TESTS=1 AND a docker binary on PATH.
-# Everything here skips cleanly otherwise -- never fail for lack of Docker.
+# Default tests skip integration; explicitly opting in requires a working runtime.
 
 needs_docker = pytest.mark.skipif(
-    not (RUN_DOCKER_TESTS and docker_available(shutil.which("docker") or "docker")),
-    reason="opt-in Docker integration tests require SILICON_RUN_DOCKER_TESTS=1 "
-    "and a docker binary (skipped: no Docker here)",
+    not RUN_DOCKER_TESTS,
+    reason="opt-in Docker integration tests require SILICON_RUN_DOCKER_TESTS=1",
 )
 
 
 def _docker(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=120, **kwargs)
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=True, **kwargs)
+
+
+@pytest.fixture
+def docker_runtime():
+    # An explicitly requested integration run must fail, not silently skip,
+    # when the binary, daemon or pre-pulled image is unavailable.
+    assert docker_available(), "Docker is required when SILICON_RUN_DOCKER_TESTS=1"
+    info = json.loads(_docker(["docker", "info", "--format", "{{json .}}"]).stdout)
+    assert info["OSType"] == "linux"
+    image = json.loads(_docker(["docker", "image", "inspect", DEFAULT_IMAGE]).stdout)[0]
+    assert image["RepoDigests"], "integration image must have a registry digest"
+    return image
+
 
 
 @needs_docker
-def test_integration_no_read_outside_mounts_no_write_to_readonly(tmp_path):
+def test_integration_no_read_outside_mounts_no_write_to_readonly(tmp_path, docker_runtime):
     """Container cannot read a host sentinel outside mounts nor write a ro input."""
     sentinel = tmp_path / "host-sentinel.txt"
     sentinel.write_text("top-secret-sentinel\n")
     inputs = tmp_path / "inputs"
     inputs.mkdir(exist_ok=True)
     (inputs / "in.txt").write_text("readonly-input\n")
+    (inputs / "in.txt").chmod(0o666)  # Only the read-only mount should prevent writes.
     outdir = tmp_path / "outputs"
     outdir.mkdir(exist_ok=True)
+    outdir.chmod(0o777)  # The non-root container must be able to write candidate output.
     runner = make_runner()
     mounts = [
         ContainerMount(str(inputs), "/task/inputs", readonly=True),
         ContainerMount(str(outdir), "/task/outputs", readonly=False),
     ]
     code = (
-        "import pathlib, sys\n"
+        "import errno, pathlib, sys\n"
         f"print('sentinel-exists:', pathlib.Path({str(sentinel)!r}).exists())\n"
         "try:\n"
         "    print(open('/task/inputs/in.txt').read().strip())\n"
@@ -328,8 +341,10 @@ def test_integration_no_read_outside_mounts_no_write_to_readonly(tmp_path):
         "try:\n"
         "    open('/task/inputs/in.txt', 'w').write('pwned')\n"
         "    print('WRITE-SUCCEEDED-BAD')\n"
-        "except Exception as e:\n"
+        "except OSError as e:\n"
+        "    assert e.errno == errno.EROFS, e\n"
         "    print('write-blocked-ok:', type(e).__name__)\n"
+        "pathlib.Path('/task/outputs/candidate.txt').write_text('candidate-output')\n"
     )
     result = runner.run(
         "python",
@@ -343,17 +358,21 @@ def test_integration_no_read_outside_mounts_no_write_to_readonly(tmp_path):
     assert "sentinel-exists: False" in out
     assert "readonly-input" in out
     assert "WRITE-SUCCEEDED-BAD" not in out
+    assert "write-blocked-ok:" in out
+    assert (outdir / "candidate.txt").read_text() == "candidate-output"
     assert (inputs / "in.txt").read_text() == "readonly-input\n"
 
 
 @needs_docker
-def test_integration_no_network(tmp_path):
+def test_integration_no_network(tmp_path, docker_runtime):
     """No network inside the container (socket creation / egress fails)."""
     outdir = tmp_path / "outputs"
     outdir.mkdir(exist_ok=True)
+    outdir.chmod(0o777)  # The non-root container must be able to write candidate output.
     runner = make_runner()
     code = (
         "import socket\n"
+        "assert {name for _, name in socket.if_nameindex()} == {'lo'}\n"
         "s = socket.socket()\n"
         "s.settimeout(3)\n"
         "try:\n"
@@ -374,12 +393,13 @@ def test_integration_no_network(tmp_path):
 
 
 @needs_docker
-def test_integration_timeout_removes_container(tmp_path):
+def test_integration_timeout_removes_container(tmp_path, docker_runtime):
     """A runaway container maps to TIMEOUT and leaves no live container."""
     outdir = tmp_path / "outputs"
     outdir.mkdir(exist_ok=True)
+    outdir.chmod(0o777)  # The non-root container must be able to write candidate output.
     runner = make_runner()
-    before = _docker(["docker", "ps", "-q"]).stdout
+    before = _docker(["docker", "ps", "-aq"]).stdout
     result = runner.run(
         "python",
         ["-c", "import time; time.sleep(300)"],
@@ -389,6 +409,31 @@ def test_integration_timeout_removes_container(tmp_path):
     )
     assert result.status == StepStatus.TIMEOUT
     assert result.timed_out
-    after = _docker(["docker", "ps", "-q"]).stdout
+    after = _docker(["docker", "ps", "-aq"]).stdout
     leaked = set(after.split()) - set(before.split())
     assert not leaked, f"live containers leaked after timeout: {leaked}"
+
+
+@needs_docker
+def test_integration_effective_identity_and_limits(tmp_path, docker_runtime):
+    runner = make_runner()
+    code = (
+        "import json, os, pathlib\n"
+        "status = dict(line.split(':', 1) for line in "
+        "pathlib.Path('/proc/self/status').read_text().splitlines())\n"
+        "assert os.getuid() == 65532\n"
+        "assert int(status['CapEff'].strip(), 16) == 0\n"
+        "assert status['NoNewPrivs'].strip() == '1'\n"
+        "limits = {name: pathlib.Path('/sys/fs/cgroup', name).read_text().strip() "
+        "for name in ['memory.max', 'memory.swap.max', 'pids.max', 'cpu.max']}\n"
+        "print(json.dumps(limits))\n"
+    )
+    result = runner.run('python', ['-c', code], log_dir=tmp_path / 'limits', timeout_s=30)
+    assert result.status == StepStatus.SUCCESS, result.stderr_path.read_text()
+    limits = json.loads(result.stdout_path.read_text())
+    assert limits['memory.max'] == str(512 * 1024 * 1024)
+    assert limits['memory.swap.max'] == '0'
+    assert limits['pids.max'] == '128'
+    quota, period = map(int, limits['cpu.max'].split())
+    assert quota / period == float(runner.provenance()['limits']['cpus'])
+    assert docker_runtime['Os'] == 'linux'

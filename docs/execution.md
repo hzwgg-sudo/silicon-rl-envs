@@ -96,13 +96,38 @@ into an infrastructure failure; Docker exit codes determine that distinction.
 ### Opt-in integration checks (Linux + Docker only)
 
 ```bash
+# Pull explicitly; the runner never fetches images implicitly.
+IMAGE=$(python -c 'from silicon_env.runners.container import DEFAULT_IMAGE; print(DEFAULT_IMAGE)')
+docker pull "$IMAGE"
 SILICON_RUN_DOCKER_TESTS=1 pytest tests/test_container_runner.py
 ```
 
-Covers: host sentinel outside mounts unreadable, read-only input not
-writable, no network egress, timeout leaves no live container. Gated
-behind `SILICON_RUN_DOCKER_TESTS=1` with a clean skip when Docker is
-absent (default CI / macOS runs only the no-Docker unit tests).
+Covers: host sentinel outside mounts unreadable, a world-writable input blocked
+by the read-only filesystem, writable candidate output, loopback-only networking,
+blocked egress, timeout cleanup, non-root identity, dropped privileges, and
+effective cgroup resource limits. The limit checks require Linux cgroup v2.
+Default tests skip integration. Setting `SILICON_RUN_DOCKER_TESTS=1` requires a
+working Linux Docker daemon and the pre-pulled image; missing prerequisites fail
+the requested check.
+
+Verified on Linux ARM64 in Colima: the full suite passed with **192 tests and no
+skips**. See [recorded runtime and image evidence](m0-docker-verification.json).
+
+To reproduce using the dedicated Mac test VM created during review:
+
+```bash
+colima start silicon-m0
+colima -p silicon-m0 ssh
+# Run from the staged source tree inside the VM:
+cd /private/tmp/silicon-m0-docker/source
+SILICON_RUN_DOCKER_TESTS=1 /tmp/m0-venv/bin/python -m pytest -q
+# Exit the VM shell, then release its memory:
+exit
+colima stop silicon-m0
+```
+
+The staged checkout and virtual environment are temporary test resources and
+may need recreating after cleanup. The VM is stopped after verification.
 
 ## Non-goals
 

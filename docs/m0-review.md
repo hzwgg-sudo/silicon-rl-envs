@@ -1,7 +1,8 @@
 # M0 independent review
 
 Reviewed implementation through `2de9aa4` against GitHub issues #1–#9.
-Corrections are in the working tree. No commit, push, merge, or issue-state change was made.
+Corrections were committed as `d167fa3`. The follow-up Docker verification
+is recorded below. No push, merge, or issue-state change was made.
 
 ## Findings corrected
 
@@ -56,17 +57,28 @@ The final suite adds 32 regression cases. Process tests execute real local Pytho
 subprocesses. Container command/output/interface tests use a fake Docker executable;
 they verify orchestration behavior, not real container isolation.
 
-## Remaining acceptance gate
+## Docker follow-up: verified on Linux
 
-**M0 cannot yet be declared fully verified.** No Docker executable is available on
-this host. The three opt-in M0-09 integration tests for filesystem isolation,
-network isolation, and timeout cleanup were skipped. On a prepared Linux host with
-the configured image already available, run:
+The previously skipped gate now passes on a dedicated Colima VM running
+Ubuntu 24.04.4, Linux 6.8.0-117-generic, ARM64, Python 3.12.3 and Docker 29.5.2.
+The VM was limited to 2 CPUs and 2 GiB RAM and shared only a temporary test directory.
 
-```bash
-SILICON_RUN_DOCKER_TESTS=1 pytest tests/test_container_runner.py
-```
+`SILICON_RUN_DOCKER_TESTS=1 python -m pytest -q --tb=short` completed with
+**192 passed, zero failed, zero skipped**, in 11.03 seconds. This includes the full
+core suite plus four real container integration tests. Effective cgroup limits
+matched the runner configuration. Docker reported zero remaining containers.
 
-The default image uses a version tag, not an immutable digest. The documentation
-now explicitly requires a verified digest for byte-identical image reproducibility.
+The filesystem check now uses a world-writable input and asserts `EROFS`, proving
+that the read-only mount blocks writes. It also verifies successful candidate
+output writes. Network checks require a loopback-only interface set. Runtime
+checks verify UID 65532, no effective capabilities, no-new-privileges, and actual
+memory/swap/CPU/PID limits. Opting in now fails if Docker, its daemon, or the image
+is unavailable instead of silently skipping the requested checks.
+
+See [machine-readable evidence](m0-docker-verification.json) for the resolved
+registry digest, runtime versions, configuration and results. The original
+17-test container module also passed before these checks were strengthened.
+
+The default image uses a version tag; the evidence records the exact digest
+executed. Use that verified digest for byte-identical image reproducibility.
 Raw execution logs remain local diagnostics; exported `.log` artifacts are redacted.

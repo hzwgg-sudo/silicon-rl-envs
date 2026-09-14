@@ -1,0 +1,67 @@
+{
+  "recorded_at_utc": "2026-09-14T04:33:55.538166+00:00",
+  "review_commit": "d167fa3",
+  "host": {
+    "system": "Linux",
+    "release": "6.8.0-117-generic",
+    "architecture": "aarch64",
+    "python": "3.12.3"
+  },
+  "docker_server": {
+    "version": "29.5.2",
+    "os": "linux",
+    "arch": "arm64",
+    "api_version": "1.54"
+  },
+  "image": {
+    "reference": "python:3.12.3-slim-bookworm",
+    "id": "sha256:afc139a0a640942491ec481ad8dda10f2c5b753f5c969393b12480155fe15a63",
+    "repo_digests": [
+      "python@sha256:afc139a0a640942491ec481ad8dda10f2c5b753f5c969393b12480155fe15a63"
+    ],
+    "os": "linux",
+    "architecture": "arm64"
+  },
+  "runner_provenance": {
+    "runner": "container",
+    "backend": "docker",
+    "docker_bin": "docker",
+    "image": "python:3.12.3-slim-bookworm",
+    "image_allowlist": [
+      "python:3.12.3-slim-bookworm"
+    ],
+    "limits": {
+      "memory": "512m",
+      "memory_swap": "512m",
+      "cpus": "1.0",
+      "pids_limit": 128
+    },
+    "security": {
+      "network": "none",
+      "user": "65532:65532",
+      "read_only_root": true,
+      "cap_drop": [
+        "ALL"
+      ],
+      "pull": "never",
+      "writable_scratch": "/scratch"
+    }
+  },
+  "verification": {
+    "command": "SILICON_RUN_DOCKER_TESTS=1 python -m pytest -q --tb=short",
+    "passed": 192,
+    "failed": 0,
+    "skipped": 0,
+    "duration_s": 11.03,
+    "remaining_containers": [],
+    "real_container_checks": [
+      "host sentinel inaccessible",
+      "world-writable input blocked with EROFS",
+      "candidate output writable",
+      "loopback-only network and blocked egress",
+      "timeout cleanup leaves no containers",
+      "UID 65532, zero effective capabilities, no-new-privileges",
+      "cgroup memory, swap, CPU and PID limits"
+    ]
+  }
+}
