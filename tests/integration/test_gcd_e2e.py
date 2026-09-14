@@ -453,3 +453,37 @@ def test_real_noop_and_bounded_search_agents(tmp_path):
         finally:
             env.close()
     (tmp_path / "agent-results.json").write_text(json.dumps(outcomes, indent=2) + "\n")
+
+
+@NEEDS_GATE
+def test_documented_cli_run_and_independent_regrade(tmp_path):
+    import subprocess
+    import sys
+
+    checkout = _require_checkout()
+    baseline_record = _load_baseline_record()
+    baseline_path = tmp_path / "baseline.json"
+    baseline_path.write_text(json.dumps(baseline_record))
+    task_path = tmp_path / "task.json"
+    task_path.write_text(_real_task(GATE_SEED).to_json())
+    actions_path = tmp_path / "actions.json"
+    actions_path.write_text(json.dumps([
+        {"action_type": "read_file", "params": {"path": gcd.CANDIDATE_RELPATH}},
+        {"action_type": "write_file", "params": {
+            "path": gcd.CANDIDATE_RELPATH, "content": json.dumps(LEGAL_EDIT)}},
+        {"action_type": "run_tool", "params": {"tool": gcd_flow.FLOW_TOOL_NAME}},
+        {"action_type": "submit", "params": {}},
+    ]))
+    output = tmp_path / "episode"
+    environ = dict(os.environ, ORFS_CHECKOUT=str(checkout),
+                   SILICON_GCD_BASELINE=str(baseline_path))
+    for argv in (
+        ["scripts/run_task.py", "--task", str(task_path), "--actions", str(actions_path),
+         "--output-dir", str(output)],
+        ["scripts/grade_task.py", "--submission-dir", str(output)],
+    ):
+        result = subprocess.run([sys.executable, *argv], cwd=REPO_ROOT, env=environ,
+                                capture_output=True, text=True, timeout=REAL_WALLCLOCK_S)
+        assert result.returncode == 0, result.stdout + result.stderr
+    grade = json.loads((output / "grade.json").read_text())
+    assert grade["passed"] is True
