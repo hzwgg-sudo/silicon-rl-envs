@@ -93,3 +93,9 @@ seqs, absolute/`..` refs, dangling refs, hash mismatches, or an
 
 No database, no telemetry upload, no waveform ingestion, and no exact
 timestamp equality. Hashing is SHA-256 over bytes / canonical strict JSON.
+
+Tool logs are isolated by episode before ingestion. Exported `.log` artifacts
+are redacted before their hashes are recorded; the raw execution logs remain
+local diagnostics. Verification checks the trace semantic hash, event count,
+artifact hashes and event references. Nested secret fields and known secret
+environment values are redacted from exported text.

@@ -167,9 +167,7 @@ def test_timeout_kills_parent_and_spawned_child(tmp_path):
         import time as _time
 
         _time.sleep(1.0)
-        with pytest.raises(AssertionError, match="child process survived timeout"):
-            if _pid_alive(child_pid):
-                raise AssertionError("child process survived timeout")
+        assert not _pid_alive(child_pid), "child process survived timeout"
 
 
 def _pid_alive(pid: int) -> bool:
@@ -179,6 +177,9 @@ def _pid_alive(pid: int) -> bool:
         return False
     except PermissionError:
         return True
+    stat = Path(f"/proc/{pid}/stat")
+    if stat.exists():
+        return stat.read_text().rsplit(")", 1)[1].split()[0] != "Z"
     return True
 
 

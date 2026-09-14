@@ -286,7 +286,7 @@ def run_episode(
                 break
         if grade is None and not env.done:
             grade = env.submit()
-            steps = max(steps, 0)
+            steps = env.budget_tracker.steps_used
             submitted_message = grade.message
         if grade is None:
             # Done via submit-step (or budget edge): re-grade the live
@@ -322,6 +322,8 @@ def run_episode(
             raise CliInfraError("episode trace files are missing")
         shutil.copyfile(src_trace, output_dir / TRACE_FILENAME)
         shutil.copyfile(src_manifest, output_dir / MANIFEST_FILENAME)
+        if (Path(run_dir) / "artifacts").is_dir():
+            shutil.copytree(Path(run_dir) / "artifacts", output_dir / "artifacts")
         (output_dir / TASK_FILENAME).write_text(
             dumps_strict(task.to_dict()) + "\n", encoding="utf-8"
         )
@@ -381,6 +383,8 @@ def cmd_run_task(args: argparse.Namespace) -> int:
         f"status={summary['status']} passed={str(summary['passed']).lower()} "
         f"score={summary['score']} steps={summary['steps']} output={output_dir}"
     )
+    if summary["status"] == "infra_error":
+        return EXIT_INFRA
     return EXIT_PASS if summary["passed"] else EXIT_FAIL
 
 
@@ -425,8 +429,14 @@ EXIT_HELP = (
 )
 
 
+class _ArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        self.print_usage(sys.stderr)
+        self.exit(EXIT_INFRA, f"{self.prog}: error: {message}\n")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="silicon-run-task", description=__doc__)
+    parser = _ArgumentParser(prog="silicon-run-task", description=__doc__)
     sub = parser.add_subparsers(dest="command")
     run_p = sub.add_parser(
         "run-task",
@@ -454,7 +464,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def build_run_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _ArgumentParser(
         prog="silicon-run-task",
         description=f"Run one toy episode into --output-dir. {EXIT_HELP}.",
     )
@@ -468,7 +478,7 @@ def build_run_parser() -> argparse.ArgumentParser:
 
 
 def build_grade_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _ArgumentParser(
         prog="silicon-grade-task",
         description=f"Regrade a run-task output dir with the pure toy grader. {EXIT_HELP}.",
     )

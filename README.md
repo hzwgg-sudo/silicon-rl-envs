@@ -23,8 +23,9 @@ tests/
 ## Install
 
 ```bash
-pip install -e .        # runtime only (stdlib, no extra deps)
-pip install -e .[dev]   # with pytest + ruff for development
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[dev]'  # runtime + pytest and ruff
 ```
 
 ## Local task execution (toy-only, M0-08)
@@ -35,10 +36,10 @@ error. No agent loop, network, EDA tools, or UI.
 
 ```bash
 # 1. Write a task file and an explicit action script.
-/tmp/silicon-venv/bin/python - <<'EOF'
+python - <<'EOF'
 import json
 from silicon_env.environments.toy import TOY_TARGET_TEXT, make_toy_task
-Path = __import__("pathlib").Path
+from pathlib import Path
 Path("/tmp/toy-task.json").write_text(make_toy_task(seed=0).to_json() + "\n")
 actions = [
     {"action_type": "read_file", "params": {"path": "note.txt"}},

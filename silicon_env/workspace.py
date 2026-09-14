@@ -95,7 +95,10 @@ def _compile_allowlist(patterns: Iterable[str]) -> tuple[re.Pattern[str], ...]:
             raise WorkspaceError(
                 f"allowed_edit_paths entries must be non-empty strings, got {pattern!r}"
             )
-        compiled.append(re.compile(_glob_to_regex(normalized)))
+        try:
+            compiled.append(re.compile(_glob_to_regex(normalized)))
+        except re.error as exc:
+            raise WorkspaceError(f"invalid edit pattern {pattern!r}: {exc}") from exc
     return tuple(compiled)
 
 
@@ -169,7 +172,11 @@ class WorkspaceManager:
         ):
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise WorkspaceError(f"{name} must be a positive int, got {value!r}")
-        if not isinstance(prefix, str) or not prefix:
+        if (
+            not isinstance(prefix, str) or not prefix
+            or any(c in prefix for c in ("/", "\\", "\x00"))
+            or prefix in (".", "..")
+        ):
             raise WorkspaceError("prefix must be a non-empty string")
 
         template = Path(template_dir)
@@ -183,6 +190,11 @@ class WorkspaceManager:
             raise WorkspaceError(f"cannot create root_dir {root}: {exc}") from exc
         if not root.is_dir() or root.is_symlink():
             raise WorkspaceError(f"root_dir must be a directory: {root}")
+
+        if root.resolve() == template.resolve() or template.resolve() in root.resolve().parents:
+            raise WorkspaceError("root_dir must not be inside template_dir")
+        if (template / MARKER_FILENAME).exists() or (template / MARKER_FILENAME).is_symlink():
+            raise WorkspaceError("template contains reserved ownership marker")
 
         self._root = root.resolve()
         self._template = template.resolve()
@@ -212,7 +224,7 @@ class WorkspaceManager:
     def is_editable(self, rel: PathLike) -> bool:
         """Return True when ``rel`` matches the editable-file allowlist."""
         posix = _check_rel_syntax(rel)
-        return any(rx.fullmatch(posix) for rx in self._allowlist)
+        return posix != MARKER_FILENAME and any(rx.fullmatch(posix) for rx in self._allowlist)
 
     # -- path resolution -------------------------------------------------
 
@@ -272,7 +284,8 @@ class WorkspaceManager:
             self._owned.discard(dest.resolve() if dest.exists() else dest)
             raise WorkspaceError(f"failed to copy template into {dest}: {exc}") from exc
         try:
-            (dest / MARKER_FILENAME).write_text(self._token, encoding="utf-8")
+            with (dest / MARKER_FILENAME).open("x", encoding="utf-8") as marker:
+                marker.write(self._token)
         except OSError as exc:
             shutil.rmtree(dest, ignore_errors=True)
             raise WorkspaceError(f"failed to mark episode directory {dest}: {exc}") from exc
@@ -382,7 +395,7 @@ class WorkspaceManager:
                 f"write of {len(data)} bytes to {rel!r} exceeds the {limit}-byte limit"
             )
         posix = _check_rel_syntax(rel)
-        if not self._matches_allowlist(posix):
+        if posix == MARKER_FILENAME or not self._matches_allowlist(posix):
             raise WorkspaceError(
                 f"write to protected input is not allowed: {rel!r} "
                 f"(allowed_edit_paths={list(self._allowlist_src)})"

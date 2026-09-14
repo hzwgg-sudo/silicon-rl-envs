@@ -221,8 +221,8 @@ class BudgetTracker:
 
         Returns the clamped :class:`ToolAllowance` (effective timeout
         never exceeds remaining wall time). Does not mutate counters --
-        follow a successful launch *or a failed attempt* with
-        :meth:`consume_tool_call` so failures are charged consistently.
+        call :meth:`consume_tool_call` immediately before dispatch so
+        failed attempts and timeouts are charged consistently.
         Raises :class:`BudgetExhausted` without mutating when exhausted.
         """
         effective = self.check_tool_call(requested_timeout_s)
@@ -250,7 +250,7 @@ class BudgetTracker:
     def consume_tool_call(self, *, valid: bool = True) -> str | None:
         """Charge one step plus one tool call for a dispatched attempt.
 
-        Call exactly once per dispatched tool attempt regardless of
+        Call immediately before dispatch, exactly once per attempt regardless of
         outcome (success, tool failure, timeout, or launch failure) so
         failed attempts are charged consistently. Returns the
         post-charge exhausted reason. Raises :class:`BudgetExhausted`

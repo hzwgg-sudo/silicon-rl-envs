@@ -175,3 +175,8 @@ try:
 except ContractError as exc:
     print("invalid task:", exc)
 ```
+
+Direct `submit()` consumes one action, just like `step(submit)`. If the action
+or wall-time budget is exhausted, it returns a timeout grade without running
+the grader. Tool attempts are charged immediately before execution so a
+timeout remains a structured result even when it uses the remaining wall time.

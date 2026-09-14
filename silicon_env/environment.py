@@ -284,18 +284,11 @@ class BaseEnvironment(ABC):
         task = self._task
         tracker = self._tracker
 
-        # Budget gate BEFORE any dispatch or tool launch.
-        is_tool_action = action.action_type == "run_tool"
+        # Validate untrusted parameters only after checking the action quota.
         try:
-            if is_tool_action:
-                requested = self._requested_timeout(action)
-                tracker.reserve_tool_call(requested)
-            else:
-                tracker.reserve_action(valid=True)
+            tracker.reserve_action()
         except BudgetExhausted as exc:
-            return self._timeout_result(str(exc) or f"budget exhausted: {exc.reason}")
-
-        # Pure validation against the task contract.
+            return self._timeout_result(str(exc))
         try:
             task.validate_action(action)
             self._validate_params(action)
@@ -319,6 +312,16 @@ class BaseEnvironment(ABC):
         """Grade the current workspace (traced by the :meth:`submit` wrapper)."""
         self._require_active("submit")
         assert self._task is not None
+        assert self._tracker is not None
+        try:
+            self._tracker.consume_action()
+        except BudgetExhausted as exc:
+            self._done = True
+            return GradeResult(
+                schema_version=1, task_id=self._task.task_id,
+                task_version=self._task.task_version, status=GradeStatus.TIMEOUT,
+                score=0.0, passed=False, provenance=self._provenance(), message=str(exc),
+            )
         result = self._grade()
         result.validate()
         self._done = True
@@ -335,7 +338,11 @@ class BaseEnvironment(ABC):
 
             run_id = f"run_{uuid.uuid4().hex[:12]}"
             run_dir = self._work_root / "runs" / run_id
-            recorder = TraceRecorder(run_dir, task=self._task, seed=self._seed, run_id=run_id)
+            backend = getattr(self._runner, "provenance", None)
+            recorder = TraceRecorder(
+                run_dir, task=self._task, seed=self._seed, run_id=run_id,
+                runner_provenance=backend() if callable(backend) else {"runner": "local"},
+            )
             snapshot = self._tracker.snapshot() if self._tracker is not None else {}
             immutable = ""
             if self._workspace is not None:
@@ -379,7 +386,9 @@ class BaseEnvironment(ABC):
         if not self._enable_trace or recorder is None or self._trace_finalized:
             return
         try:
-            log_dir = self._work_root / "logs" / f"step_{result.step_index}"
+            log_dir = self._work_root / "logs" / self._workspace.root.name / (
+                f"step_{result.step_index}"
+            )
             artifact_files: list[Path] = []
             for name in ("stdout.log", "stderr.log"):
                 candidate = log_dir / name
@@ -445,13 +454,12 @@ class BaseEnvironment(ABC):
 
     def _do_read_file(self, action: Action) -> StepResult:
         assert self._tracker is not None and self._workspace is not None
+        reason = self._tracker.consume_action(valid=True)
         rel = action.params["path"]
         try:
             content = self._workspace.read_text(rel)
         except Exception as exc:
-            reason = self._tracker.consume_action(valid=True)
             return self._failure_result(action, str(exc), exit_code=1, exhausted_reason=reason)
-        reason = self._tracker.consume_action(valid=True)
         return self._success_result(
             action,
             stdout=content,
@@ -461,17 +469,16 @@ class BaseEnvironment(ABC):
 
     def _do_write_file(self, action: Action) -> StepResult:
         assert self._tracker is not None and self._workspace is not None
+        reason = self._tracker.consume_action(valid=True)
         rel = action.params["path"]
         content = action.params["content"]
         try:
             self._workspace.write_text(rel, content)
         except Exception as exc:
-            reason = self._tracker.consume_action(valid=True)
             text = str(exc)
             if "protected" in text or "allowed_edit_paths" in text:
                 return self._invalid_result(action, text, exhausted_reason=reason)
             return self._failure_result(action, text, exit_code=1, exhausted_reason=reason)
-        reason = self._tracker.consume_action(valid=True)
         return self._success_result(
             action, stdout=f"wrote {rel}", message=f"wrote {rel}", exhausted_reason=reason
         )
@@ -491,7 +498,14 @@ class BaseEnvironment(ABC):
             allowance_timeout = self._tracker.effective_timeout(requested)
         except BudgetExhausted as exc:
             return self._timeout_result(str(exc) or "budget exhausted")
-        log_dir = self._work_root / "logs" / f"step_{self._step_count + 1}"
+        log_dir = self._work_root / "logs" / self._workspace.root.name / (
+            f"step_{self._step_count + 1}"
+        )
+        # Charge before execution: elapsed wall time must not prevent charging a timeout.
+        try:
+            self._tracker.consume_tool_call()
+        except BudgetExhausted as exc:
+            return self._timeout_result(str(exc))
         try:
             run: RunResult = self._runner.run(
                 tool,
@@ -503,9 +517,8 @@ class BaseEnvironment(ABC):
         except Exception as exc:
             # Runner misuse (unknown tool, bad args): charge the slot, report
             # as invalid so the agent learns the tool surface.
-            self._tracker.consume_tool_call()
             return self._invalid_result(action, str(exc))
-        reason = self._tracker.consume_tool_call()
+        reason = self._tracker.exhausted_reason()
         stdout = self._read_log_tail(run.stdout_path)
         stderr = self._read_log_tail(run.stderr_path)
         if run.status == StepStatus.SUCCESS:
@@ -566,7 +579,14 @@ class BaseEnvironment(ABC):
             exit_code=0 if passed else 1,
             stdout=grade.message,
         )
-        status = StepStatus.SUCCESS if passed else StepStatus.INVALID_SUBMISSION
+        status = {
+            GradeStatus.PASS: StepStatus.SUCCESS,
+            GradeStatus.FAIL: StepStatus.INVALID_SUBMISSION,
+            GradeStatus.INVALID_SUBMISSION: StepStatus.INVALID_SUBMISSION,
+            GradeStatus.TOOL_FAILURE: StepStatus.TOOL_FAILURE,
+            GradeStatus.TIMEOUT: StepStatus.TIMEOUT,
+            GradeStatus.INFRA_ERROR: StepStatus.INFRA_ERROR,
+        }[grade.status]
         reward = 1.0 if passed else 0.0
         self._step_count += 1
         return StepResult(
@@ -582,7 +602,7 @@ class BaseEnvironment(ABC):
                 exit_code=obs.exit_code,
                 stdout_tail=obs.stdout_tail,
                 stderr_tail=obs.stderr_tail,
-                timed_out=False,
+                timed_out=status == StepStatus.TIMEOUT,
                 duration_s=0.0,
             ),
             metrics=tuple(grade.metrics),

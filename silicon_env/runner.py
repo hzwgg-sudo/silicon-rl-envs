@@ -78,8 +78,6 @@ def _require_positive_int(value: object, *, field_name: str) -> int:
 
 def _kill_process_group(proc: subprocess.Popen[bytes], sig: int) -> None:
     """Signal the whole child process group; ignore already-exited races."""
-    if proc.poll() is not None:
-        return
     _kill_pgid(proc.pid, sig)
 
 
@@ -314,16 +312,14 @@ class ToolRunner:
                 limit=limit,
             )
         except BaseException:
-            # Cancel path: never leave the process group behind.
-            _kill_process_group(proc, signal.SIGTERM)
+            # The leader may exit before descendants; always escalate the group.
+            _kill_pgid(proc.pid, signal.SIGTERM)
+            time.sleep(self._kill_grace_s)
+            _kill_pgid(proc.pid, signal.SIGKILL)
             try:
                 proc.wait(timeout=self._kill_grace_s)
-            except Exception:
-                _kill_process_group(proc, signal.SIGKILL)
-                try:
-                    proc.wait(timeout=self._kill_grace_s)
-                except Exception:
-                    pass
+            except subprocess.TimeoutExpired:
+                pass
             raise
         finally:
             # Reap pipes so file descriptors never leak to the caller.
@@ -401,7 +397,7 @@ class ToolRunner:
                 assert stream is not None
                 if (kind == "out" and out_eof) or (kind == "err" and err_eof):
                     continue
-                while True:
+                for _ in range(16):
                     try:
                         chunk = stream.read(_READ_CHUNK)
                     except (BlockingIOError, OSError):
@@ -430,7 +426,7 @@ class ToolRunner:
                 _drain_available()
                 now = time.monotonic()
                 exited = proc.poll() is not None
-                if not exited and now >= deadline and not timed_out:
+                if now >= deadline and not timed_out and not (exited and out_eof and err_eof):
                     timed_out = True
                     _kill_process_group(proc, signal.SIGTERM)
                     term_sent_at = now
@@ -439,6 +435,10 @@ class ToolRunner:
                     if now - term_sent_at >= self._kill_grace_s:
                         _kill_pgid(proc.pid, signal.SIGKILL)
                 if exited and out_eof and err_eof:
+                    if timed_out and term_sent_at is not None:
+                        # Descendants may close their pipes and ignore TERM.
+                        time.sleep(max(0.0, self._kill_grace_s - (now - term_sent_at)))
+                    _kill_pgid(proc.pid, signal.SIGKILL)
                     break
                 if exited and timed_out and not (out_eof and err_eof):
                     # Parent reaped but a grandchild still holds the pipes:

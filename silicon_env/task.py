@@ -79,6 +79,12 @@ class TaskSpec:
         edits = require_str_list(list(self.allowed_edit_paths), field_name="allowed_edit_paths")
         if len(set(edits)) != len(edits):
             raise ContractError("allowed_edit_paths must not contain duplicates")
+        from silicon_env.workspace import WorkspaceError, _compile_allowlist
+
+        try:
+            _compile_allowlist(edits)
+        except (WorkspaceError, ValueError) as exc:
+            raise ContractError(f"invalid allowed_edit_paths: {exc}") from exc
         require_bool(self.read_only, field_name="read_only")
         if not isinstance(self.budgets, Budget):
             raise ContractError("budgets must be a Budget")

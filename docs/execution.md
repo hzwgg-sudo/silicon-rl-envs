@@ -45,7 +45,7 @@ result = runner.run(
 | No network | `--network none` |
 | Non-root | `--user 65532:65532` |
 | Read-only root | `--read-only` (+ `--init`) |
-| No capabilities | `--cap-drop ALL` |
+| No capabilities or privilege escalation | `--cap-drop ALL --security-opt no-new-privileges` |
 | Process limit | `--pids-limit 128` |
 | Memory limit | `--memory 512m` / `--memory-swap 512m` |
 | CPU limit | `--cpus 1.0` |
@@ -54,7 +54,8 @@ result = runner.run(
 
 Defaults are tunable at construction (`memory=`, `cpus=`,
 `pids_limit=`, `user=`, ...); `provenance()` reports the effective
-values.
+values. Network access, root UIDs, and unlimited resource settings are rejected.
+The image's own `PATH` is retained unless explicitly allowlisted by the caller.
 
 ### Mount allowlist
 
@@ -63,14 +64,19 @@ entries are mounted (`:ro` inputs, `:rw` candidate output). The runner
 **refuses** to mount host `/`, `/etc`, `/var/run` (incl. the Docker
 socket), the host home directory, and `$SILICON_EVAL_SECRETS_DIR` when
 set -- misuse raises `ContainerRunnerError` before Docker is touched.
-Container paths must be absolute and free of `..`.
+Container paths must be absolute and free of `..`. Ancestors of protected
+host paths are also rejected. The common `run(..., cwd=...)` interface mounts
+the declared candidate workspace read-write at `/work`; additional immutable
+inputs use explicit read-only mounts. Stage workspaces outside the home tree
+(for example under `/tmp`) to satisfy the mount policy.
 
 ### Result mapping
 
 - exit 0 -> `SUCCESS`; nonzero tool exit -> `TOOL_FAILURE`
   (exit 137 notes a SIGKILL / possible OOM in `error`).
 - deadline overrun -> `TIMEOUT` (`timed_out=True`); the container is
-  force-removed so no live container leaks.
+  force-removed. If cleanup fails, the result explicitly reports that removal
+  could not be confirmed.
 - missing `docker` binary, missing image, daemon errors, and
   architecture mismatches (`exec format error`, docker 125/126/127)
   -> `INFRA_ERROR` with `launched=False` -- never success.
@@ -79,8 +85,13 @@ Container paths must be absolute and free of `..`.
 
 `runner.provenance()` returns backend identity, the pinned image ref,
 the image allowlist, effective limits, and the security posture as a
-JSON-serializable dict. Attach `image` + `limits` to trace manifests /
-`toolchain_refs` so runs record exactly what executed the candidate.
+JSON-serializable dict. Environments automatically record it under
+`runner_provenance` in reset events and final manifests. Version tags can move;
+use a verified digest reference when byte-identical image identity is required.
+
+Both backends stream stdout/stderr to bounded files rather than buffering all
+output in host memory. Docker diagnostic text alone never changes a tool result
+into an infrastructure failure; Docker exit codes determine that distinction.
 
 ### Opt-in integration checks (Linux + Docker only)
 

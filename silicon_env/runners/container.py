@@ -38,11 +38,12 @@ is unit-testable anywhere (including macOS without Docker).
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -52,6 +53,7 @@ from silicon_env.runner import (
     DEFAULT_TIMEOUT_S,
     RunnerError,
     RunResult,
+    ToolRunner,
     _require_argv,
     _require_positive_float,
     _require_positive_int,
@@ -143,7 +145,9 @@ def _require_container_path(value: object, *, field_name: str) -> str:
     parts = value.split("/")
     if ".." in parts:
         raise ContainerRunnerError(f"{field_name} must not contain '..': {value!r}")
-    return value
+    if ":" in value or "\x00" in value:
+        raise ContainerRunnerError(f"{field_name} contains a forbidden separator")
+    return os.path.normpath(value)
 
 
 @dataclass(frozen=True)
@@ -199,7 +203,10 @@ def _reject_if_forbidden(host_raw: str, candidate: Path) -> None:
             if root_cmp == Path("/"):
                 inside = candidate == root_cmp
             else:
-                inside = candidate == root_cmp or root_cmp in candidate.parents
+                inside = (
+                    candidate == root_cmp or root_cmp in candidate.parents
+                    or candidate in root_cmp.parents
+                )
             if inside:
                 raise ContainerRunnerError(
                     f"mount host_path {host_raw!r} is inside forbidden root "
@@ -222,6 +229,8 @@ def _check_mount(mount: ContainerMount) -> tuple[str, str, bool]:
     _reject_if_forbidden(host_raw, Path(os.path.normpath(expanded)))
     if not host_path.exists():
         raise ContainerRunnerError(f"mount host_path does not exist: {host_raw!r}")
+    if ":" in str(host_path) or "\x00" in str(host_path):
+        raise ContainerRunnerError("mount host_path contains a forbidden separator")
     resolved = host_path.resolve()
     _reject_if_forbidden(host_raw, resolved)
     container_path = _require_container_path(
@@ -263,7 +272,8 @@ def build_docker_argv(
         raise ContainerRunnerError(f"container_name must be a simple token, got {container_name!r}")
     if not isinstance(image, str) or not image.strip():
         raise ContainerRunnerError("image must be a non-empty string")
-    argv_inside = _require_argv(list(tool_argv), what="tool argv")
+    _require_image_ref(image, allowed_images=[image])
+    argv_inside = _require_argv(tool_argv, what="tool argv")
     workdir = _require_container_path(workdir, field_name="workdir")
     scratch_dir = _require_container_path(scratch_dir, field_name="scratch_dir")
     if not isinstance(user, str) or not user.strip():
@@ -277,6 +287,19 @@ def build_docker_argv(
         raise ContainerRunnerError("pids_limit must be a positive int")
     if not isinstance(scratch_size, str) or not scratch_size.strip():
         raise ContainerRunnerError("scratch_size must be a non-empty string")
+
+    if network != "none":
+        raise ContainerRunnerError("restricted runner requires network='none'")
+    if not re.fullmatch(r"[1-9][0-9]*(?::[1-9][0-9]*)?", user):
+        raise ContainerRunnerError("user must be a numeric non-root UID and optional non-root GID")
+    for label, value in (("memory", memory), ("memory_swap", memory_swap),
+                         ("scratch_size", scratch_size)):
+        if not re.fullmatch(r"[1-9][0-9]*[bkmgBKMG]?", value):
+            raise ContainerRunnerError(f"{label} must be a finite positive size")
+    try:
+        _require_positive_float(float(cpus), field_name="cpus")
+    except (ValueError, RunnerError) as exc:
+        raise ContainerRunnerError("cpus must be finite and positive") from exc
 
     checked_mounts: list[tuple[str, str, bool]] = [_check_mount(m) for m in mounts]
     seen: set[str] = set()
@@ -309,6 +332,8 @@ def build_docker_argv(
         "--read-only",
         "--cap-drop",
         "ALL",
+        "--security-opt",
+        "no-new-privileges",
         "--pids-limit",
         str(pids_limit),
         "--memory",
@@ -387,7 +412,7 @@ class ContainerRunner:
             raise ContainerRunnerError("docker_bin must be a non-empty string")
         self._docker_bin = docker_bin
         if env_allowlist is None:
-            self._env_allowlist: tuple[str, ...] = ("PATH", "LANG", "LC_ALL", "TZ")
+            self._env_allowlist: tuple[str, ...] = ("LANG", "LC_ALL", "TZ")
         else:
             if not isinstance(env_allowlist, (list, tuple)):
                 raise ContainerRunnerError("env_allowlist must be a list of strings")
@@ -514,6 +539,7 @@ class ContainerRunner:
         args: Sequence[str] = (),
         *,
         mounts: Sequence[ContainerMount] = (),
+        cwd: str | os.PathLike[str] | None = None,
         log_dir: str | os.PathLike[str],
         env: Mapping[str, str] | None = None,
         timeout_s: float | None = None,
@@ -535,6 +561,10 @@ class ContainerRunner:
             )
         extra = self._coerce_args(args)
         argv_inside = self._tools[clean_name] + extra
+        if cwd is not None:
+            # The common runner protocol declares cwd as the candidate workspace.
+            # Additional immutable inputs remain explicit read-only mounts.
+            mounts = (*mounts, ContainerMount(Path(cwd).absolute(), workdir, readonly=False))
 
         if isinstance(log_dir, os.PathLike):
             log_dir = os.fspath(log_dir)
@@ -608,119 +638,37 @@ class ContainerRunner:
             scratch_dir=self._scratch_dir,
         )
 
+        # Reuse bounded streaming and process cleanup from the local backend.
+        # Only allowlisted values above enter the container; the Docker client
+        # itself retains its host environment to locate its daemon/config.
+        client = ToolRunner(
+            tools={clean_name: cmd}, env_allowlist=tuple(os.environ),
+            kill_grace_s=self._kill_grace_s,
+        )
         try:
-            proc = subprocess.Popen(
-                cmd,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                start_new_session=True,
+            result = client.run(
+                clean_name, cwd=log_path.resolve(), log_dir=log_path.resolve(),
+                timeout_s=deadline_s, max_output_bytes=limit,
             )
-        except (FileNotFoundError, NotADirectoryError, PermissionError, OSError) as exc:
-            return _infra(f"failed to launch {self._docker_bin!r}: {exc}")
-
-        try:
-            try:
-                stdout_data, stderr_data = proc.communicate(timeout=deadline_s)
-            except subprocess.TimeoutExpired:
-                self._remove_container(container_name)
-                try:
-                    proc.kill()
-                except OSError:
-                    pass
-                try:
-                    stdout_data, stderr_data = proc.communicate(timeout=self._kill_grace_s)
-                except Exception:
-                    stdout_data, stderr_data = b"", b""
-                    try:
-                        proc.kill()
-                    except OSError:
-                        pass
-                self._remove_container(container_name)
-                duration = time.monotonic() - start
-                self._write_capped(stdout_path, stdout_data or b"", limit)
-                out_bytes, out_trunc = self._capped_len(stdout_data or b"", limit)
-                self._write_capped(stderr_path, stderr_data or b"", limit)
-                err_bytes, err_trunc = self._capped_len(stderr_data or b"", limit)
-                return RunResult(
-                    tool_name=clean_name,
-                    argv=argv_inside,
-                    cwd=Path(checked_workdir),
-                    log_dir=log_path,
-                    stdout_path=stdout_path,
-                    stderr_path=stderr_path,
-                    exit_code=None,
-                    status=StepStatus.TIMEOUT,
-                    timed_out=True,
-                    launched=True,
-                    duration_s=duration,
-                    stdout_truncated=out_trunc,
-                    stderr_truncated=err_trunc,
-                    stdout_bytes=out_bytes,
-                    stderr_bytes=err_bytes,
-                    error=f"timed out after {deadline_s}s; container removed",
-                )
         except BaseException:
-            # Cancel path: never leave a live container behind.
             self._remove_container(container_name)
-            try:
-                proc.kill()
-            except OSError:
-                pass
             raise
-
-        duration = time.monotonic() - start
-        exit_code: int | None = proc.returncode
-        out_bytes, out_trunc = self._capped_len(stdout_data or b"", limit)
-        err_bytes, err_trunc = self._capped_len(stderr_data or b"", limit)
-        self._write_capped(stdout_path, stdout_data or b"", limit)
-        self._write_capped(stderr_path, stderr_data or b"", limit)
-        stderr_text = (stderr_data or b"").decode("utf-8", errors="replace")
-
-        if _looks_like_infra(exit_code, stderr_text):
-            return RunResult(
-                tool_name=clean_name,
-                argv=argv_inside,
-                cwd=Path(checked_workdir),
-                log_dir=log_path,
-                stdout_path=stdout_path,
-                stderr_path=stderr_path,
-                exit_code=None,
-                status=StepStatus.INFRA_ERROR,
-                timed_out=False,
-                launched=False,
-                duration_s=duration,
-                stdout_truncated=out_trunc,
-                stderr_truncated=err_trunc,
-                stdout_bytes=out_bytes,
-                stderr_bytes=err_bytes,
-                error=f"container infrastructure failure: {stderr_text.strip()[:500]}",
+        if result.timed_out:
+            removed = self._remove_container(container_name)
+            error = "timed out; container removed" if removed else (
+                "timed out; container cleanup could not be confirmed"
             )
-        if exit_code == 0:
-            status = StepStatus.SUCCESS
-            error = ""
-        else:
-            status = StepStatus.TOOL_FAILURE
-            error = ""
-            if exit_code == 137:
-                error = "container killed (exit 137: SIGKILL -- possibly OOM/killed)"
-        return RunResult(
-            tool_name=clean_name,
-            argv=argv_inside,
-            cwd=Path(checked_workdir),
-            log_dir=log_path,
-            stdout_path=stdout_path,
-            stderr_path=stderr_path,
-            exit_code=exit_code,
-            status=status,
-            timed_out=False,
-            launched=True,
-            duration_s=duration,
-            stdout_truncated=out_trunc,
-            stderr_truncated=err_trunc,
-            stdout_bytes=out_bytes,
-            stderr_bytes=err_bytes,
-            error=error,
+            return replace(result, argv=argv_inside, cwd=Path(checked_workdir), error=error)
+        stderr_text = result.stderr_path.read_text(encoding="utf-8", errors="replace")
+        if not result.launched or _looks_like_infra(result.exit_code, stderr_text):
+            return replace(
+                result, argv=argv_inside, cwd=Path(checked_workdir),
+                exit_code=None, status=StepStatus.INFRA_ERROR, launched=False,
+                error=result.error or f"container infrastructure failure: {stderr_text[:500]}",
+            )
+        return replace(
+            result, argv=argv_inside, cwd=Path(checked_workdir),
+            error="container killed (possibly OOM)" if result.exit_code == 137 else "",
         )
 
     # -- internals --------------------------------------------------------
@@ -753,17 +701,18 @@ class ContainerRunner:
             child[key] = value
         return child
 
-    def _remove_container(self, container_name: str) -> None:
+    def _remove_container(self, container_name: str) -> bool:
         try:
-            subprocess.run(
+            result = subprocess.run(
                 [self._docker_bin, "rm", "-f", container_name],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=self._kill_grace_s,
             )
+            return result.returncode == 0
         except Exception:
-            pass
+            return False
 
     @staticmethod
     def _capped_len(data: bytes, limit: int) -> tuple[int, bool]:
@@ -781,10 +730,9 @@ class ContainerRunner:
 
 
 def _looks_like_infra(exit_code: int | None, stderr_text: str) -> bool:
-    lowered = stderr_text.lower()
-    if exit_code in _DOCKER_DAEMON_EXIT_CODES:
-        return True
-    return any(marker in lowered for marker in _INFRA_MARKERS)
+    # Tool stderr is untrusted diagnostic text, not a Docker status signal.
+    return exit_code in _DOCKER_DAEMON_EXIT_CODES
+
 
 
 __all__ = [

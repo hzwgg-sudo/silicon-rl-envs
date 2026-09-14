@@ -123,6 +123,10 @@ def redact_mapping(data: Mapping[str, Any]) -> dict[str, Any]:
             out[key] = REDACTED_VALUE
         elif isinstance(value, str):
             out[key] = redact_text(value)
+        elif isinstance(value, Mapping):
+            out[key] = redact_mapping(value)
+        elif isinstance(value, (list, tuple)):
+            out[key] = [redact_mapping({"value": v})["value"] for v in value]
         else:
             out[key] = value
     return out
@@ -132,7 +136,14 @@ def redact_text(text: Any, *, extra_roots: tuple[str, ...] = ()) -> str:
     """Redact inline secrets and known absolute host roots in free text."""
     coerced = text if isinstance(text, str) else str(text)
     redacted = SECRET_INLINE_RE.sub(r"\1=<REDACTED>", coerced)
-    for root in extra_roots:
+    for key, value in os.environ.items():
+        if value and SECRET_KEY_RE.search(key):
+            if len(value) >= 8:
+                redacted = redacted.replace(value, REDACTED_VALUE)
+            else:
+                redacted = re.sub(r"(?<!\w)" + re.escape(value) + r"(?!\w)",
+                                  REDACTED_VALUE, redacted)
+    for root in sorted(set(extra_roots + _redact_roots()), key=len, reverse=True):
         if root and isinstance(root, str) and root in redacted:
             redacted = redacted.replace(root, HOST_PATH_PLACEHOLDER)
     home = os.path.expanduser("~")
@@ -150,7 +161,7 @@ def _redact_roots() -> tuple[str, ...]:
         cwd = ""
     if cwd:
         roots.append(cwd)
-    for var in ("TMPDIR", "TEMP", "TMP"):
+    for var in ("TMPDIR", "TEMP", "TMP", "SILICON_EVAL_SECRETS_DIR"):
         candidate = os.environ.get(var, "")
         if candidate.startswith("/") and candidate not in roots:
             roots.append(candidate)
@@ -207,7 +218,7 @@ def read_events(trace_path: str | os.PathLike[str]) -> list[dict[str, Any]]:
             raise TraceError(f"trace line {lineno} must decode to an object")
         events.append(payload)
     seqs = [e.get("seq") for e in events]
-    if seqs != sorted(seqs) or seqs != list(range(len(events))):
+    if seqs != list(range(len(events))):
         raise TraceError(f"trace seqs must be ordered 0..n-1, got {seqs!r}")
     return events
 
@@ -261,7 +272,11 @@ def verify_run(run_dir: str | os.PathLike[str]) -> dict[str, Any]:
     trace_path = root / trace_rel
     if not trace_path.is_file() or trace_path.is_symlink():
         raise TraceError(f"dangling trace ref: {trace_rel!r}")
-    read_events(trace_path)  # parseability + ordering check
+    events = read_events(trace_path)
+    if semantic_hash_for(events) != manifest.get("semantic_hash"):
+        raise TraceError("trace semantic hash mismatch")
+    if manifest.get("events") != len(events):
+        raise TraceError("trace event count mismatch")
     artifacts = manifest.get("artifacts", [])
     if not isinstance(artifacts, list):
         raise TraceError("manifest artifacts must be a list")
@@ -275,13 +290,19 @@ def verify_run(run_dir: str | os.PathLike[str]) -> dict[str, Any]:
         if ".." in Path(rel).parts:
             raise TraceError(f"artifact ref must not escape the run dir: {rel!r}")
         target = root / rel
-        if not target.is_file() or target.is_symlink():
+        if (not target.is_file() or target.is_symlink()
+                or root.resolve() not in target.resolve().parents):
             raise TraceError(f"dangling artifact ref: {rel!r}")
         actual = sha256_file(target)
         if actual != expected:
             raise TraceError(
                 f"artifact hash mismatch for {rel!r}: expected {expected}, got {actual}"
             )
+    declared = {entry["path"] for entry in artifacts}
+    for event in events:
+        for ref in event.get("artifact_refs", []):
+            if ref not in declared:
+                raise TraceError(f"dangling artifact ref in trace: {ref!r}")
     return manifest
 
 
@@ -306,6 +327,7 @@ class TraceRecorder:
         task: Any,
         seed: int | None = None,
         run_id: str | None = None,
+        runner_provenance: Mapping[str, Any] | None = None,
         clock: WallClockFn | None = None,
     ) -> None:
         if task is None or not hasattr(task, "to_dict"):
@@ -325,6 +347,7 @@ class TraceRecorder:
             raise TraceError(f"cannot create artifacts dir {artifacts}: {exc}") from exc
         self._run_dir = root
         self._task = task
+        self._runner_provenance = redact_mapping(dict(runner_provenance or {}))
         self._seed = task.seed if seed is None else seed
         if isinstance(self._seed, bool) or not isinstance(self._seed, int):
             raise TraceError("seed must be an int")
@@ -392,6 +415,7 @@ class TraceRecorder:
             "task_hash": self._task_hash,
             "seed": self._seed,
             "toolchain_refs": dict(self._task.toolchain_refs),
+            "runner_provenance": self._runner_provenance,
             "grader_id": self._task.grader.grader_id,
             "grader_version": self._task.grader.grader_version,
             "observation": self._summarize_observation(obs),
@@ -412,7 +436,14 @@ class TraceRecorder:
         step_label: str | None = None,
     ) -> dict[str, Any]:
         """Record one step event; copies ``artifact_files`` into the run dir."""
-        action_dict = action.to_dict() if hasattr(action, "to_dict") else dict(action)
+        try:
+            action_dict = action.to_dict() if hasattr(action, "to_dict") else dict(action)
+        except ContractError:
+            # Invalid actions are part of the audit trail too.
+            action_dict = {
+                "action_type": str(getattr(action, "action_type", "invalid")),
+                "params": {"invalid_repr": repr(getattr(action, "params", None))},
+            }
         result_dict = result.to_dict() if hasattr(result, "to_dict") else dict(result)
         label = step_label or f"step_{result_dict.get('step_index', self._steps + 1)}"
         refs: list[str] = []
@@ -478,7 +509,8 @@ class TraceRecorder:
         if ".." in Path(dest_rel).parts:
             raise TraceError(f"artifact dest must not escape the run dir: {dest_rel!r}")
         src_path = Path(src)
-        digest = sha256_file(src_path)  # raises OSError when missing
+        if src_path.is_symlink():
+            raise TraceError("symlink artifacts are not allowed")
         try:
             size = src_path.stat().st_size
         except OSError as exc:
@@ -486,10 +518,19 @@ class TraceRecorder:
         dest = self._run_dir / dest_rel
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(src_path, dest)
+            if dest.is_symlink() or self._run_dir.resolve() not in dest.resolve().parents:
+                raise TraceError("artifact destination escapes run directory")
+            if src_path.suffix == ".log":
+                dest.write_text(
+                    redact_text(src_path.read_text(encoding="utf-8", errors="replace"),
+                                extra_roots=self._redact_roots), encoding="utf-8",
+                )
+            else:
+                shutil.copyfile(src_path, dest)
         except OSError as exc:
             raise TraceError(f"cannot ingest artifact {src_path}: {exc}") from exc
-        entry = {"path": dest_rel, "sha256": digest, "size_bytes": size}
+        size = dest.stat().st_size
+        entry = {"path": dest_rel, "sha256": sha256_file(dest), "size_bytes": size}
         self._artifacts.append(entry)
         return dest_rel
 
@@ -519,6 +560,7 @@ class TraceRecorder:
             "task_hash": self._task_hash,
             "seed": self._seed,
             "toolchain_refs": dict(self._task.toolchain_refs),
+            "runner_provenance": self._runner_provenance,
             "grader_id": self._task.grader.grader_id,
             "grader_version": self._task.grader.grader_version,
             "budgets": self._task.budgets.to_dict(),
@@ -566,6 +608,8 @@ class TraceRecorder:
     # -- internals ----------------------------------------------------------
 
     def _append(self, event: dict[str, Any]) -> dict[str, Any]:
+        if self._finalized:
+            raise TraceError("cannot append to a finalized trace")
         json.dumps(event, allow_nan=False)  # strict-JSON guard before writing
         line = dumps_strict(event)
         try:
