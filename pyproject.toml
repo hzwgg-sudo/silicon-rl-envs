@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "silicon-rl-envs"
+version = "0.1.0"
+description = "RL environments for training and evaluating AI agents on real semiconductor engineering tasks."
+readme = "README.md"
+requires-python = ">=3.10"
+# Runtime is stdlib-only by design (M0): keeps installs fast on an M1/8GB laptop
+# and keeps default tests free of EDA tools, Docker, network, or API keys.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.8",
+]
+
+[project.scripts]
+silicon-run-task = "silicon_env.cli:main_run"
+silicon-grade-task = "silicon_env.cli:main_grade"
+
+[tool.setuptools.packages.find]
+include = ["silicon_env*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

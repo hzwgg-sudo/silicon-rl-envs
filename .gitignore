@@ -216,3 +216,36 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Generated EDA artifacts (never commit tool outputs)
+*.gds
+*.gds2
+*.oas
+*.lef
+*.def
+*.lib
+*.db
+*.vcd
+*.vpd
+*.fsdb
+*.wlf
+drc_reports/
+lvs_reports/
+*.drc.rpt
+*.lvs.rpt
+# Common EDA tool scratch/output dirs
+run/
+runs/
+work/
+synth_outputs/
+pnr_outputs/
+simv
+simv.daidir/
+csrc/
+ucli.key
+vc_hdrs.h
+verdiLog/
+novas*.log
+*.vdb
+sdf/
+sdc_annotated/
