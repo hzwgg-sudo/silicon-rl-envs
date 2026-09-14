@@ -28,11 +28,13 @@ source .venv/bin/activate
 python -m pip install -e '.[dev]'  # runtime + pytest and ruff
 ```
 
-## Local task execution (toy-only, M0-08)
+## Local task execution (toy + GCD, M0-08/M1-08)
 
 Run a task with an explicit action script, then regrade the saved submission.
-Toy adapter only (`toy-text-edit`); other task IDs are rejected with a clear
-error. No agent loop, network, EDA tools, or UI.
+Toy (`toy-text-edit`) and GCD (`gcd-nangate45`) adapters; other task IDs are
+rejected with a clear error. No agent loop, network, EDA tools, or UI.
+GCD flow/submit needs `ORFS_CHECKOUT` at the pinned commit on the Linux
+route; without it GCD episodes fail closed as infrastructure.
 
 ```bash
 # 1. Write a task file and an explicit action script.
@@ -56,7 +58,8 @@ python scripts/run_task.py --task /tmp/toy-task.json \
     --actions /tmp/toy-actions.json --output-dir /tmp/toy-out
 echo "run exit: $?"
 
-# 3. Regrade the saved submission with the pure grader.
+# 3. Regrade the saved submission with the pure grader (toy) or the
+#    independent evaluator (GCD, needs ORFS_CHECKOUT).
 python scripts/grade_task.py --submission-dir /tmp/toy-out
 echo "grade exit: $?"
 cat /tmp/toy-out/summary.json
