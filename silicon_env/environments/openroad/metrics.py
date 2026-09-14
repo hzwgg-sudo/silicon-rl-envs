@@ -374,6 +374,9 @@ def parse_final_reports(
                     reasons.append("non-finite-wns")
                 else:
                     wns_ns = parsed * _TIME_TO_NS[unit]
+                    if not math.isfinite(wns_ns):
+                        reasons.append("non-finite-wns")
+                        wns_ns = None
         tns_hit = _search_timed(_TNS_RES, timing_text)
         if tns_hit is None:
             reasons.append("missing-tns")
@@ -388,7 +391,10 @@ def parse_final_reports(
                     reasons.append("non-finite-tns")
                 else:
                     tns_ns = parsed * _TIME_TO_NS[unit]
-                    if tns_ns > 0:
+                    if not math.isfinite(tns_ns):
+                        reasons.append("non-finite-tns")
+                        tns_ns = None
+                    elif tns_ns > 0:
                         reasons.append("tns-positive")
     else:
         if "missing-wns" not in reasons:
@@ -413,7 +419,10 @@ def parse_final_reports(
                     reasons.append("non-finite-area")
                 else:
                     area_um2 = parsed * _AREA_TO_UM2[unit]
-                    if not area_um2 > 0:
+                    if not math.isfinite(area_um2):
+                        reasons.append("non-finite-area")
+                        area_um2 = None
+                    elif not area_um2 > 0:
                         reasons.append("area-nonpositive")
                         area_um2 = None if not math.isfinite(area_um2) else area_um2
     else:
@@ -626,8 +635,8 @@ def parse_flow_result(
         routed_ok=metrics.routed_ok,
         drc_count=metrics.drc_count,
         unconstrained_paths=metrics.unconstrained_paths,
-        valid=metrics.valid,
-        reasons=metrics.reasons,
+        valid=metrics.valid and status == "success",
+        reasons=metrics.reasons + (() if status == "success" else ("flow-failed",)),
         notes=metrics.notes,
         raw_refs=merged_refs,
     )

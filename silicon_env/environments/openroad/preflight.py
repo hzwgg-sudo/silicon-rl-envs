@@ -231,13 +231,13 @@ def default_probe_tool(name: str) -> tuple[bool, str]:
             timeout=15,
         )
     except (OSError, subprocess.SubprocessError):
-        return (True, "")
+        return (False, "")
     try:
         text = proc.stdout.decode("utf-8", errors="replace").strip()
     except Exception:
         text = ""
     first_line = text.splitlines()[0].strip() if text else ""
-    return (True, first_line)
+    return (proc.returncode == 0 and bool(first_line), first_line)
 
 
 def _host_memory_gb() -> float | None:
@@ -332,6 +332,9 @@ def run_preflight(
         if not root.is_dir():
             failures.append(f"ORFS checkout {str(root)!r} does not exist or is not a dir")
         else:
+            from silicon_env.environments.openroad.sources import verify_checkout
+
+            failures.extend(verify_checkout(root.resolve(), lock["orfs"]["commit"]))
             for rel in lock["required_assets"]:
                 if not (root / rel).is_file():
                     failures.append(f"required asset missing: {rel} (under {root})")

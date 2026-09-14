@@ -70,17 +70,17 @@ RUN_GATE = os.environ.get("SILICON_RUN_GCD_E2E", "") == "1"
 CHECKOUT = os.environ.get("ORFS_CHECKOUT", "").strip()
 BASELINE_OVERRIDE = os.environ.get("SILICON_GCD_BASELINE", "").strip()
 
-GATE_SEED = 7
+GATE_SEED = int(os.environ.get("GATE_SEED", "7"))
 LEGAL_EDIT = {"PLACE_DENSITY": 0.5, "CORE_UTILIZATION": 55.0}
 
 # Real-flow budgets: the pinned GCD flow runs for tens of minutes, far
 # beyond the default task budgets. These stay explicit and bounded; the
 # workflow caps the whole job with timeout-minutes on top.
 REAL_WALLCLOCK_S = 14400.0
-REAL_GRADER_TIMEOUT_S = 7200.0
+REAL_GRADER_TIMEOUT_S = float(os.environ.get("GATE_TIMEOUT_S", "7200"))
 
 NEEDS_GATE = pytest.mark.skipif(
-    not (RUN_GATE and CHECKOUT),
+    not RUN_GATE,
     reason=(
         "opt-in release gate: set SILICON_RUN_GCD_E2E=1 plus ORFS_CHECKOUT "
         "at the pinned commit on the Linux route (blocked on Mac dev host)"
@@ -111,16 +111,18 @@ def _load_generator():
 
 
 def _require_checkout() -> Path:
-    if not (RUN_GATE and CHECKOUT):
+    if not RUN_GATE:
         pytest.skip(
             "opt-in release gate: set SILICON_RUN_GCD_E2E=1 plus ORFS_CHECKOUT "
             "at the pinned commit on the Linux route"
         )
+    if not CHECKOUT:
+        pytest.fail("enabled GCD gate requires ORFS_CHECKOUT")
     root = Path(CHECKOUT)
     if not root.is_dir():
-        pytest.skip(f"ORFS_CHECKOUT is not a directory: {root}")
+        pytest.fail(f"ORFS_CHECKOUT is not a directory: {root}")
     if not (root / "flow" / "Makefile").is_file():
-        pytest.skip(
+        pytest.fail(
             f"ORFS_CHECKOUT {root} has no flow/Makefile; pass the pinned "
             f"ORFS checkout ({gcd.ORFS_COMMIT[:12]}...)"
         )
@@ -148,28 +150,10 @@ def _real_task(seed: int, **overrides):
 
 
 def _discovery_parse_fn():
-    """Trusted parser with best-effort final-report discovery (fail closed)."""
-    generator = _load_generator()
+    """Use the same trusted report parser as the production evaluator."""
+    from silicon_env.environments.openroad.reports import parse_generated_reports
 
-    def _parse(flow_result):
-        workdir = ""
-        provenance = getattr(flow_result, "provenance", None)
-        if isinstance(provenance, dict):
-            workdir = str(provenance.get("flow_workdir", "") or "")
-        texts = (
-            generator.discover_report_texts(flow_result, workdir) if workdir else {}
-        )
-        return gcd_metrics.parse_flow_result(
-            flow_result,
-            timing_text=texts.get("timing_text"),
-            area_text=texts.get("area_text"),
-            drc_text=texts.get("drc_text"),
-            timing_ref=f"{workdir or '<flow>'}:timing",
-            area_ref=f"{workdir or '<flow>'}:area",
-            drc_ref=f"{workdir or '<flow>'}:drc",
-        )
-
-    return _parse
+    return parse_generated_reports
 
 
 def _make_real_env(work_root: Path, checkout: Path, baseline_record: dict, **overrides):
@@ -276,6 +260,7 @@ def test_three_episodes_agree_on_trace_metrics_and_reward(tmp_path):
     rewards = {ep["reward"] for ep in episodes}
     assert len(rewards) == 1, f"reward diverged across runs: {rewards}"
     for index, ep in enumerate(episodes):
+        assert ep["grade"].passed, ep["grade"].message
         assert ep["parsed"], (
             f"run {index} produced no parseable final metrics; "
             "report discovery found nothing usable (fail closed)"
@@ -306,7 +291,7 @@ def test_three_episodes_agree_on_trace_metrics_and_reward(tmp_path):
             f"{candidate!r} vs {reference!r}"
         )
     if not baseline_verified:
-        pytest.skip(
+        pytest.fail(
             "trace/metrics/reward agree across runs, but the packaged "
             f"baseline is not verified ({baseline_note}); generate a "
             "verified record for scoring use"
@@ -326,6 +311,7 @@ def test_stock_legal_and_invalid_edits(tmp_path):
         env.reset(_real_task(GATE_SEED))
         grade = env.submit()
         grade.validate()
+        assert grade.passed, grade.message
         stock_reward = float(grade.score)
     finally:
         env.close()
@@ -356,7 +342,7 @@ def test_stock_legal_and_invalid_edits(tmp_path):
     finally:
         env.close()
 
-    assert stock_reward >= 0.0
+    assert stock_reward > 0.0
     assert float(legal["reward"]) >= 0.0
 
 

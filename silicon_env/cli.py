@@ -384,7 +384,7 @@ def _load_gcd_baseline_record() -> dict[str, Any]:
     """
     from silicon_env.environments.openroad import config as gcd_config
 
-    path = gcd_config.TASK_DIR / "baseline.json"
+    path = Path(os.environ.get("SILICON_GCD_BASELINE") or gcd_config.TASK_DIR / "baseline.json")
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
@@ -402,14 +402,9 @@ def _load_gcd_baseline_record() -> dict[str, Any]:
 
 def _make_gcd_environment(work_root: Path):
     """Build a real-backend GCD environment for CLI episodes."""
-    from silicon_env.environments.openroad.environment import GcdEnvironment
-    from silicon_env.environments.openroad.flow import FLOW_ENV_KEYS, FLOW_TOOL_NAME
-    from silicon_env.runner import DEFAULT_ENV_ALLOWLIST, ToolRunner
+    from silicon_env.environments.openroad.environment import GcdEnvironment, default_flow_runner
 
-    runner = ToolRunner(
-        tools={FLOW_TOOL_NAME: ["make"]},
-        env_allowlist=[*DEFAULT_ENV_ALLOWLIST, *FLOW_ENV_KEYS],
-    )
+    runner = default_flow_runner()
     return GcdEnvironment(
         work_root=work_root,
         runner=runner,
@@ -674,9 +669,7 @@ def cmd_grade_gcd_task(args: argparse.Namespace, *, task, submission_dir: Path) 
 
     from silicon_env.environments.openroad import config as gcd_config
     from silicon_env.environments.openroad import evaluator as gcd_evaluator
-    from silicon_env.environments.openroad.flow import FLOW_ENV_KEYS, FLOW_TOOL_NAME
     from silicon_env.grader import GradeResult
-    from silicon_env.runner import DEFAULT_ENV_ALLOWLIST, ToolRunner
     from silicon_env.types import (
         ContractError,
         GradeStatus,
@@ -727,10 +720,9 @@ def cmd_grade_gcd_task(args: argparse.Namespace, *, task, submission_dir: Path) 
                 "GCD regrade needs ORFS_CHECKOUT at the pinned commit "
                 "(Linux route); without trusted sources no score can be recomputed"
             )
-        runner = ToolRunner(
-            tools={FLOW_TOOL_NAME: ["make"]},
-            env_allowlist=[*DEFAULT_ENV_ALLOWLIST, *FLOW_ENV_KEYS],
-        )
+        from silicon_env.environments.openroad.environment import default_flow_runner
+
+        runner = default_flow_runner()
         try:
             with tempfile.TemporaryDirectory(prefix="gcd-regrade-") as tmp:
                 staging = Path(tmp) / "submission"

@@ -42,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="path to the pinned ORFS checkout (else $ORFS_CHECKOUT)",
     )
+    parser.add_argument("--native-tools", action="store_true",
+                        help="probe host binaries (manual in-image flow wrapper only)")
     parser.add_argument("--min-ram-gb", type=float, default=None)
     parser.add_argument("--min-cpus", type=int, default=None)
     parser.add_argument(
@@ -60,8 +62,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     try:
+        from silicon_env.environments.openroad.runtime import probe_pinned_tool
+
         report = run_preflight(
             lock,
+            probe_tool=None if args.native_tools else probe_pinned_tool,
             orfs_checkout=args.orfs_checkout,
             machine=args.arch,
             min_ram_gb=args.min_ram_gb,

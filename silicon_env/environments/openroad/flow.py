@@ -1,46 +1,13 @@
-"""Fixed-endpoint GCD OpenROAD flow adapter (M1-03).
+"""Pinned GCD flow with fresh, isolated output directories.
 
-Runs one validated candidate through the pinned physical-design flow to
-the fixed ``final`` endpoint (post-detailed-route) and collects
-completion markers, the final netlist, and logs using stage-aware
-artifact paths.
+The source checkout must match the locked Git revision and have no modified
+or extra flow inputs. Each invocation passes WORK_HOME=<scratch>/outputs,
+NUM_CORES=1 and the explicit final target to Make. Final GDS/DEF/netlist
+and report paths are checked against the pinned upstream source; runtime
+verification with the actual EDA image remains outstanding.
 
-Declared endpoint contract (ORFS 26Q2 GCD layout, ``flow/`` rooted at
-the pinned checkout)::
-
-    results/nangate45/gcd/<variant>/6_final.gds   (required final GDS)
-    results/nangate45/gcd/<variant>/6_final.def   (required final DEF)
-    results/nangate45/gcd/<variant>/6_final.v     (required final netlist)
-    logs/nangate45/gcd/<variant>/6_final.log      (optional final log)
-
-The ``<variant>`` directory is derived from the lockfile
-``execution.env.FLOW_VARIANT`` (currently ``default``). Intermediate
-stage markers (``1_synth.v``, ``2_floorplan.def``, ``3_place.def``,
-``4_cts.def``, ``5_route.def``) locate how far a failed run progressed.
-Exact ORFS on-disk names are verified only by a real pinned-image run
-on the Linux route (blocked on the Mac dev host); until then this table
-is the declared contract and any mismatch surfaces as a missing/stale
-artifact failure, never as success.
-
-Freshness rule: the adapter records a wallclock start timestamp before
-invoking the tool and only accepts artifacts whose mtime is at or after
-that start. Missing final-stage artifacts, stale (pre-run) outputs, or
-a failed intermediate stage can never be labeled success. Runner
-``TIMEOUT``/``INFRA_ERROR`` map to the corresponding
-:class:`FlowResult` status (infrastructure outcomes are never converted
-into reward-bearing success/failure).
-
-Nondeterminism controls: single thread (``make -j1`` plus
-``OMP_NUM_THREADS=1``), pinned ``FLOW_VARIANT``/``TZ=UTC`` environment,
-explicit seed recorded in provenance. ORFS ``make`` offers no seed
-passthrough for this flow, so the seed is recorded but not forwarded;
-that unsupported control is stated explicitly in provenance
-(``seed_passthrough_supported=False``) rather than silently dropped.
-
-Stdlib-only, Python >= 3.10. No EDA tools, Docker, network, or API keys
-are touched here; execution goes through the caller-supplied runner
-(``ToolRunner`` / ``ContainerRunner`` protocol), which the default unit
-tests replace with a fake stub.
+The task seed is forwarded to the detailed router through OR_SEED. Other
+stochastic stages have no explicit seed control wired by this adapter.
 """
 
 from __future__ import annotations
@@ -56,6 +23,7 @@ from typing import Any, Mapping, Sequence
 
 from silicon_env.environments.openroad import config as gcd
 from silicon_env.environments.openroad.preflight import load_toolchain_lock
+from silicon_env.environments.openroad.sources import verify_checkout
 from silicon_env.types import StepStatus, require_seed
 
 # --- fixed endpoint identity -------------------------------------------------
@@ -78,20 +46,19 @@ OVERRIDES_FILENAME = "gcd_overrides.mk"
 
 #: Env keys the pinned flow environment sets. A real ``ToolRunner`` must
 #: include these in its ``env_allowlist`` (in addition to its defaults).
-FLOW_ENV_KEYS = ("FLOW_VARIANT", "OMP_NUM_THREADS", "TZ")
+FLOW_ENV_KEYS = ("FLOW_VARIANT", "OMP_NUM_THREADS", "TZ", "PYTHONDONTWRITEBYTECODE")
 
-#: ORFS ``make`` offers no seed passthrough for the GCD flow: the seed is
-#: recorded in provenance but cannot be forwarded to the tool.
-SEED_PASSTHROUGH_SUPPORTED = False
+#: The pinned detail router supports OR_SEED; other stages remain uncontrolled.
+SEED_PASSTHROUGH_SUPPORTED = True
 SEED_PASSTHROUGH_NOTE = (
-    "ORFS make exposes no seed passthrough for the GCD flow; the requested "
-    "seed is recorded for provenance/replay bookkeeping only and the run is "
-    "therefore not seeded. Any future seed knob must be added here explicitly."
+    "The pinned detail_route.tcl accepts OR_SEED. The effective router seed is "
+    "the requested nonnegative seed modulo 2**31 (signed-int range). "
+    "This controls detailed routing only, not all internal stochastic stages."
 )
 
 #: Unsupported nondeterminism controls, recorded in every provenance dict.
 UNSUPPORTED_NONDETERMINISM_CONTROLS = (
-    "orfs-make seed passthrough (no such knob for the GCD flow)",
+    "seed controls for stages other than detailed routing",
     "tool-internal thread scheduling beyond OMP_NUM_THREADS=1",
     "host kernel / filesystem timestamp granularity below 1ns",
 )
@@ -106,10 +73,10 @@ STAGE_ORDER = ("synth", "floorplan", "place", "cts", "route", "final")
 #: on-disk verification is pending on the Linux route.
 STAGE_MARKER_BASENAMES: dict[str, str] = {
     "synth": "1_synth.v",
-    "floorplan": "2_floorplan.def",
-    "place": "3_place.def",
-    "cts": "4_cts.def",
-    "route": "5_route.def",
+    "floorplan": "2_floorplan.odb",
+    "place": "3_place.odb",
+    "cts": "4_cts.odb",
+    "route": "5_route.odb",
 }
 
 #: Required final-stage basenames (GDS + DEF + netlist).
@@ -117,7 +84,7 @@ REQUIRED_FINAL_BASENAMES = ("6_final.gds", "6_final.def", "6_final.v")
 
 #: Optional final log basename (runner stdout/stderr logs always exist via
 #: the runner ``log_dir``; the ORFS-side stage log is best-effort).
-OPTIONAL_FINAL_LOG_BASENAME = "6_final.log"
+OPTIONAL_FINAL_LOG_BASENAME = "6_report.log"
 
 
 class FlowError(ValueError):
@@ -186,6 +153,7 @@ def resolve_flow_plan(lock: Mapping[str, Any] | None = None) -> dict[str, Any]:
     pinned_env = {str(k): str(v) for k, v in base_env.items()}
     pinned_env.setdefault("OMP_NUM_THREADS", "1")
     pinned_env.setdefault("TZ", "UTC")
+    pinned_env["PYTHONDONTWRITEBYTECODE"] = "1"
 
     prefix = _results_prefix(design, variant)
     required_finals = tuple(f"{prefix}/{name}" for name in REQUIRED_FINAL_BASENAMES)
@@ -306,15 +274,13 @@ def run_gcd_flow(
     :param candidate: override mapping with zero or more of
         ``PLACE_DENSITY`` / ``CORE_UTILIZATION`` (missing keys imply stock;
         validated via :func:`config.validate_candidate_config`).
-    :param orfs_checkout: pinned ORFS checkout (read; flow outputs land in
-        its ``flow/`` tree per standard ORFS behavior -- use a throwaway
-        copy or container overlay to keep a pristine pin untouched).
+    :param orfs_checkout: clean, pinned ORFS checkout; outputs go to scratch.
     :param scratch_dir: fresh empty directory outside the checkout; receives
         ``candidate.json``, ``gcd_overrides.mk``, and the runner logs.
     :param runner: object with a ``run(tool, args, *, cwd, log_dir, env,
         timeout_s)`` method returning a ``RunResult`` (``ToolRunner`` or
         ``ContainerRunner`` protocol).
-    :param seed: recorded in provenance (no ORFS seed passthrough exists).
+    :param seed: recorded and forwarded to the detailed router (modulo 2**31).
     :param timeout_s: positive finite deadline forwarded to the runner.
     :param env_overrides: optional extra/override env entries (recorded in
         provenance; pinned keys win unless explicitly overridden here).
@@ -333,6 +299,9 @@ def run_gcd_flow(
         raise FlowError("tool_versions must be a mapping of str to str or None")
 
     checkout = _resolve_checkout(orfs_checkout)
+    source_errors = verify_checkout(checkout, gcd.ORFS_COMMIT)
+    if source_errors:
+        raise FlowError("; ".join(source_errors))
     scratch = _resolve_fresh_scratch(scratch_dir, checkout=checkout)
     plan = resolve_flow_plan(lock)
     flow_dir = checkout / plan["flow_subdir"]
@@ -344,12 +313,19 @@ def run_gcd_flow(
 
     make_exe, *base_args = plan["make_argv"]
     knob_args = [f"{key}={full[key]!r}" for key in gcd.ALLOWED_KEYS]
-    argv = [*base_args, *knob_args, "-j1"]
+    output_dir = scratch / "outputs"
+    output_dir.mkdir()
+    evidence_script = Path(__file__).parent / "scripts" / "final_evidence.tcl"
+    argv = [*base_args, *knob_args, f"WORK_HOME={output_dir}", "NUM_CORES=1",
+            f"POST_FINAL_REPORT_TCL={evidence_script}", f"OR_SEED={seed_value % (2**31)}",
+            "-j1", "final"]
     env: dict[str, str] = dict(plan["pinned_env"])
     if env_overrides:
         for key, value in env_overrides.items():
             if not isinstance(key, str) or not isinstance(value, str):
                 raise FlowError("env_overrides must map str names to str values")
+            if key in plan["pinned_env"] and value != plan["pinned_env"][key]:
+                raise FlowError(f"cannot override pinned environment key {key}")
             env[key] = value
 
     start_epoch = time.time()
@@ -376,7 +352,7 @@ def run_gcd_flow(
 
     def _fresh(relpath: str) -> tuple[bool, bool]:
         """Return (exists, fresh) for a flow-relative artifact path."""
-        target = flow_dir / relpath
+        target = output_dir / relpath
         try:
             if not target.is_file() or target.is_symlink():
                 return (False, False)
@@ -391,7 +367,7 @@ def run_gcd_flow(
     for relpath in (*required_finals, optional_log):
         exists, fresh = _fresh(relpath)
         if fresh:
-            artifacts[relpath] = str(flow_dir / relpath)
+            artifacts[relpath] = str(output_dir / relpath)
         elif exists:
             stale.append(relpath)
         elif relpath in required_finals:
@@ -413,6 +389,7 @@ def run_gcd_flow(
         "orfs_commit": gcd.ORFS_COMMIT,
         "image_pinned_ref": gcd.IMAGE_PINNED_REF,
         "seed_requested": seed_value,
+        "router_seed": seed_value % (2**31),
         "seed_passthrough_supported": SEED_PASSTHROUGH_SUPPORTED,
         "seed_passthrough_note": SEED_PASSTHROUGH_NOTE,
         "unsupported_nondeterminism_controls": list(UNSUPPORTED_NONDETERMINISM_CONTROLS),
@@ -421,6 +398,8 @@ def run_gcd_flow(
         "candidate_path": str(scratch / CANDIDATE_FILENAME),
         "overrides_path": str(scratch / OVERRIDES_FILENAME),
         "flow_workdir": str(flow_dir),
+        "output_dir": str(output_dir),
+        "start_ns": start_ns,
         "scratch_dir": str(scratch),
         "tool_name": FLOW_TOOL_NAME,
         "make_executable": make_exe,
@@ -438,10 +417,12 @@ def run_gcd_flow(
         "required_finals": list(required_finals),
         "optional_final_log": optional_log,
         "layout_verification": (
-            "pending-linux-run: stage/final relpaths are the declared ORFS 26Q2 "
+            "source-verified, pending-linux-run: stage/final relpaths match ORFS 26Q2 "
             "GCD contract; on-disk verification awaits a real pinned-image run"
         ),
     }
+    if callable(getattr(runner, "provenance", None)):
+        provenance["runner_profile"] = runner.provenance()
     if tool_versions is not None:
         provenance["tool_versions"] = {str(k): str(v) for k, v in tool_versions.items()}
     else:

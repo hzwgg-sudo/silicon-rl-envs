@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import tempfile
@@ -50,15 +51,6 @@ DEFAULT_OUTPUT = str(
     / "baseline.json"
 )
 
-#: Suffixes searched (in order) when discovering fresh final-stage
-#: report texts under the flow workdir. Best effort only: exact ORFS
-#: on-disk report names are verified by the real Linux run; when
-#: nothing is found the run yields invalid metrics and generation
-#: fails closed rather than guessing.
-TIMING_NAME_HINTS = ("timing", "sta", "report_checks")
-AREA_NAME_HINTS = ("area", "report_design_area")
-DRC_NAME_HINTS = ("drc", "violation")
-
 RunOnceFn = Callable[[Path, int], Any]
 
 
@@ -78,6 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--seed", type=int, default=0, help="base seed; runs use seed/seed+1/seed+2"
     )
     parser.add_argument("--timeout-s", type=float, default=7200.0, help="per-run flow deadline")
+    parser.add_argument("--work-parent", help="retain raw run evidence under this directory")
     parser.add_argument(
         "--run-id-prefix",
         default="stock-gcd",
@@ -140,62 +133,6 @@ def write_record_atomic(record: Mapping[str, Any], output_path: str | os.PathLik
     return target
 
 
-def discover_report_texts(
-    flow_result: Any, flow_workdir: str | os.PathLike[str]
-) -> dict[str, str | None]:
-    """Best-effort fresh final-report discovery under the flow workdir.
-
-    Searches the pinned ``logs/`` + ``reports/`` prefixes for filenames
-    hinting at timing/area/DRC content and returns their texts. Missing
-    reports map to ``None`` so the metrics parser yields explicit
-    invalid metrics (fail closed, never fabricated).
-    """
-    workdir = Path(flow_workdir)
-    provenance = getattr(flow_result, "provenance", {})
-    variant = provenance.get("variant", "default") if isinstance(provenance, Mapping) else "default"
-    design, platform = gcd.FIXED_DESIGN, gcd.FIXED_PLATFORM
-    search_roots = [
-        workdir / "logs" / platform / design / variant,
-        workdir / "reports" / platform / design / variant,
-        workdir / "logs",
-        workdir / "reports",
-    ]
-    found: dict[str, str | None] = {"timing_text": None, "area_text": None, "drc_text": None}
-    hints = (
-        ("timing_text", TIMING_NAME_HINTS),
-        ("area_text", AREA_NAME_HINTS),
-        ("drc_text", DRC_NAME_HINTS),
-    )
-    for key, words in hints:
-        for root in search_roots:
-            if not root.is_dir():
-                continue
-            best: Path | None = None
-            best_mtime = -1.0
-            try:
-                candidates = list(root.rglob("*"))
-            except OSError:
-                continue
-            for candidate in candidates[:2000]:
-                if not candidate.is_file() or candidate.is_symlink():
-                    continue
-                lowered = candidate.name.lower()
-                if not any(w.strip().lower() in lowered for w in words if w.strip()):
-                    continue
-                try:
-                    mtime = candidate.stat().st_mtime_ns
-                except OSError:
-                    continue
-                if mtime > best_mtime:
-                    best, best_mtime = candidate, mtime
-            if best is not None:
-                try:
-                    found[key] = best.read_text(encoding="utf-8", errors="replace")
-                except OSError:
-                    found[key] = None
-                break
-    return found
-
 
 def make_flow_run_once(
     *,
@@ -205,15 +142,12 @@ def make_flow_run_once(
 ) -> RunOnceFn:
     """Build the real ``run_once`` (flow + metrics) for the Linux route."""
     from silicon_env.environments.openroad import flow as gcd_flow
-    from silicon_env.environments.openroad import metrics as gcd_metrics
+    from silicon_env.environments.openroad.reports import parse_generated_reports
 
     def _default_runner() -> Any:
-        from silicon_env.runner import DEFAULT_ENV_ALLOWLIST, ToolRunner
+        from silicon_env.environments.openroad.runtime import GcdContainerRunner
 
-        return ToolRunner(
-            tools={gcd_flow.FLOW_TOOL_NAME: ["make"]},
-            env_allowlist=[*DEFAULT_ENV_ALLOWLIST, *gcd_flow.FLOW_ENV_KEYS],
-        )
+        return GcdContainerRunner()
 
     factory = runner_factory or _default_runner
 
@@ -227,17 +161,9 @@ def make_flow_run_once(
             seed=seed,
             timeout_s=timeout_s,
         )
-        workdir = result.provenance.get("flow_workdir", "")
-        texts = discover_report_texts(result, workdir) if workdir else {}
-        return gcd_metrics.parse_flow_result(
-            result,
-            timing_text=texts.get("timing_text"),
-            area_text=texts.get("area_text"),
-            drc_text=texts.get("drc_text"),
-            timing_ref=f"{workdir or '<flow>'}:timing",
-            area_ref=f"{workdir or '<flow>'}:area",
-            drc_ref=f"{workdir or '<flow>'}:drc",
-        )
+        (scratch_dir / "flow-result.json").write_text(
+            json.dumps(result.to_dict(), indent=2) + "\n")
+        return parse_generated_reports(result)
 
     return run_once
 
@@ -289,14 +215,14 @@ def generate_baseline(
                 ) from exc
             collected.append(metrics)
     wallclock_s = max(0.0, time.monotonic() - start)
-    peak_rss_gb = measure_peak_rss_gb()
+    peak_rss_gb = None  # host Docker-client RSS is not the EDA process peak
     resources = {
         "wallclock_s": wallclock_s,
         "peak_rss_gb": peak_rss_gb,
         "status": "measured" if peak_rss_gb is not None else "measured-partial",
         "notes": (
             "total generator wallclock for the three stock runs; "
-            "peak RSS best-effort (None when the platform exposes no rusage)"
+            "EDA peak RSS is unmeasured: host Docker-client RSS is not container memory"
         ),
     }
     record = gcd_baseline.build_baseline_record(
@@ -325,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
     except (TypeError, ValueError):
         print("error: --timeout-s must be a number", file=sys.stderr)
         return 2
-    if not (timeout_s > 0) or timeout_s != timeout_s:
+    if not (timeout_s > 0) or not math.isfinite(timeout_s):
         print("error: --timeout-s must be a positive finite number", file=sys.stderr)
         return 2
     tolerances = {
@@ -335,12 +261,25 @@ def main(argv: list[str] | None = None) -> int:
     }
     seeds = [args.seed + i for i in range(gcd_baseline.REQUIRED_RUN_COUNT)]
     try:
+        from silicon_env.environments.openroad.preflight import (
+            load_toolchain_lock,
+            run_preflight,
+        )
+        from silicon_env.environments.openroad.runtime import probe_pinned_tool
+
+        check = run_preflight(load_toolchain_lock(), orfs_checkout=checkout_raw,
+                              probe_tool=probe_pinned_tool)
+        if not check.ok:
+            raise gcd_baseline.BaselineError(check.message())
+        versions = {name: probe_pinned_tool(name)[1] for name in ("openroad", "yosys", "make")}
         run_once = make_flow_run_once(orfs_checkout=checkout_raw, timeout_s=timeout_s)
         record = generate_baseline(
             output_path=args.output,
             run_once=run_once,
             seeds=seeds,
             tolerances=tolerances,
+            tool_versions=versions,
+            work_parent=args.work_parent,
         )
     except gcd_baseline.BaselineError as exc:
         print(f"baseline generation failed: {exc}", file=sys.stderr)

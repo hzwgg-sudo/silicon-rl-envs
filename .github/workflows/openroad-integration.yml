@@ -11,6 +11,8 @@ name: openroad-integration
 # fabricated).
 
 on:
+  push:
+    branches: [codex/m1-openroad-gcd] # temporary pre-merge qualification
   workflow_dispatch:
     inputs:
       seed:
@@ -35,6 +37,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
+      GATE_SEED: ${{ inputs.seed || '7' }}
+      GATE_TIMEOUT_S: ${{ inputs.flow_timeout_s || '7200' }}
       ORFS_COMMIT: "036d106273e66855cd5214d49518fd0f0df7de61"
       ORFS_REPO: "https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts"
       ORFS_IMAGE: "docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61"
@@ -55,7 +59,7 @@ jobs:
           git -C orfs fetch --depth 1 origin "$ORFS_COMMIT"
           git -C orfs checkout "$ORFS_COMMIT"
 
-      - name: Pull pinned image by digest (explicit; never auto-pulled)
+      - name: Pull pinned runtime (each flow launches a restricted container)
         run: docker pull "$ORFS_IMAGE"
 
       - name: Preflight gate
@@ -66,8 +70,9 @@ jobs:
           python scripts/generate_openroad_baseline.py \
             --orfs-checkout "$GITHUB_WORKSPACE/orfs" \
             --output /tmp/gcd-baseline.json \
-            --seed "${{ inputs.seed }}" \
-            --timeout-s "${{ inputs.flow_timeout_s }}"
+            --work-parent /tmp/gcd-baseline-runs \
+            --seed "$GATE_SEED" \
+            --timeout-s "$GATE_TIMEOUT_S"
 
       - name: Run deterministic GCD release gate (real pinned toolchain)
         run: |
@@ -86,5 +91,9 @@ jobs:
           if-no-files-found: warn
           path: |
             /tmp/gcd-baseline.json
+            /tmp/gcd-baseline-runs/**/logs/**
+            /tmp/gcd-baseline-runs/**/reports/**
+            /tmp/gcd-baseline-runs/**/resources.txt
+            /tmp/gcd-baseline-runs/**/flow-result.json
             /tmp/gcd-gate/**/trace.jsonl
             /tmp/gcd-gate/**/manifest.json

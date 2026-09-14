@@ -12,12 +12,13 @@ ARG ORFS_COMMIT=036d106273e66855cd5214d49518fd0f0df7de61
 
 WORKDIR /OpenROAD-flow-scripts/flow
 
-# Verify the base image already carries the pinned ORFS revision, then run
-# the preflight gate before any flow starts. The flow itself is launched
+# Check that the digest-pinned image carries the expected layout. The image
+# omits Git metadata; this is not a revision probe. Use the clean pinned
+# source checkout and preflight in docs/gcd-quickstart.md for scored runs. The flow itself is launched
 # explicitly (see silicon_env/environments/openroad/README.md), never as
 # part of the image build.
 RUN test -f ./Makefile \
     && test -f ./designs/nangate45/gcd/config.mk \
-    && echo "base image carries pinned ORFS ${ORFS_TAG} (${ORFS_COMMIT})"
+    && echo "digest-pinned image layout is present; expected ORFS ${ORFS_TAG} (${ORFS_COMMIT})"
 
 CMD ["make", "DESIGN_CONFIG=./designs/nangate45/gcd/config.mk"]

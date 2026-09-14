@@ -82,7 +82,7 @@ class FakeRunner:
         self.calls.append({"tool": tool, "args": list(args), "cwd": str(cwd)})
         log_path = Path(log_dir)
         stdout_path, stderr_path = _write_logs(log_path)
-        flow_dir = Path(cwd)
+        flow_dir = Path(next(a.split("=", 1)[1] for a in args if a.startswith("WORK_HOME=")))
         for relpath in self._emit:
             target = flow_dir / relpath
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -502,3 +502,9 @@ def test_real_pinned_end_to_end_opt_in():
         cpu_count=8,
     )
     assert report.ok, report.message()
+
+
+@pytest.fixture(autouse=True)
+def synthetic_checkout_verification(monkeypatch):
+    monkeypatch.setattr("silicon_env.environments.openroad.flow.verify_checkout", lambda *a: [])
+    monkeypatch.setattr("silicon_env.environments.openroad.sources.verify_checkout", lambda *a: [])

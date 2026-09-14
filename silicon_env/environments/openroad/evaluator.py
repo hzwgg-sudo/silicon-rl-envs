@@ -449,9 +449,9 @@ def evaluate_submission(
         ``(candidate, *, orfs_checkout, scratch_dir, runner, seed,
         timeout_s)``. Defaults to :func:`flow.run_gcd_flow`.
     :param parse_fn: injectable trusted-parser callable
-        ``(flow_result) -> GcdMetrics``. Defaults to fail-closed
-        :func:`metrics.parse_flow_result` with no report texts (a real
-        pinned run must supply report extraction on top).
+        ``(flow_result) -> GcdMetrics``. Defaults to
+        :func:`reports.parse_generated_reports`, reading only fresh reports
+        from this invocation.
     :param grade_fn: injectable trusted-grader callable
         ``(metrics, *, baseline_record, evidence) -> GcdGrade``. Defaults
         to :func:`grader.grade_gcd_candidate`.
@@ -625,11 +625,9 @@ def evaluate_submission(
         )
 
     # --- trusted parse + grade (agent numbers are never consulted) -----------
-    parse_call = parse_fn or (
-        lambda flow_res: gcd_metrics.parse_flow_result(
-            flow_res, timing_text="", area_text="", drc_text=None
-        )
-    )
+    from silicon_env.environments.openroad.reports import parse_generated_reports
+
+    parse_call = parse_fn or parse_generated_reports
     try:
         parsed = parse_call(flow_result)
     except gcd_metrics.MetricsError as exc:

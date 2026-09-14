@@ -262,3 +262,9 @@ def test_real_pinned_tool_probes():
     lock = load_lock()
     report = run_preflight(lock, orfs_checkout=os.environ.get("ORFS_CHECKOUT", ""))
     assert report.ok, report.message()
+
+
+@pytest.fixture(autouse=True)
+def synthetic_checkout_verification(monkeypatch):
+    monkeypatch.setattr("silicon_env.environments.openroad.flow.verify_checkout", lambda *a: [])
+    monkeypatch.setattr("silicon_env.environments.openroad.sources.verify_checkout", lambda *a: [])

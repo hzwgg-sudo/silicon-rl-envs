@@ -79,7 +79,7 @@ class FakeRunner:
         )
         log_path = Path(log_dir)
         stdout_path, stderr_path = _write_logs(log_path)
-        flow_dir = Path(cwd)
+        flow_dir = Path(next(a.split("=", 1)[1] for a in args if a.startswith("WORK_HOME=")))
         for relpath in self._emit:
             target = flow_dir / relpath
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -184,7 +184,9 @@ def test_success_stock_candidate_completes_final(tmp_path):
     assert prov["orfs_commit"] == gcd.ORFS_COMMIT
     assert prov["image_pinned_ref"] == gcd.IMAGE_PINNED_REF
     assert prov["seed_requested"] == 7
-    assert prov["seed_passthrough_supported"] is False
+    assert prov["seed_passthrough_supported"] is True
+    assert prov["router_seed"] == 7
+    assert "OR_SEED=7" in call["args"]
     assert prov["seed_passthrough_note"]
     assert prov["unsupported_nondeterminism_controls"]
     assert prov["candidate"] == gcd.stock_candidate_config()
@@ -332,7 +334,7 @@ def test_stale_finals_are_rejected(tmp_path):
     result = run_stock(checkout, tmp_path / "scratch", runner)
     assert result.status == StepStatus.TOOL_FAILURE
     assert not result.ok
-    assert set(result.provenance["stale_artifacts"]) == set(resolved["required_finals"])
+    assert set(result.provenance["missing_artifacts"]) == set(resolved["required_finals"])
 
 
 # --- misuse: raise, never return ----------------------------------------------
@@ -459,3 +461,9 @@ def test_real_stock_gcd_flow(tmp_path):
     sample = gcd_flow.summarize(result)
     assert sample["missing_artifacts"] == []
     assert sample["stale_artifacts"] == []
+
+
+@pytest.fixture(autouse=True)
+def synthetic_checkout_verification(monkeypatch):
+    monkeypatch.setattr("silicon_env.environments.openroad.flow.verify_checkout", lambda *a: [])
+    monkeypatch.setattr("silicon_env.environments.openroad.sources.verify_checkout", lambda *a: [])

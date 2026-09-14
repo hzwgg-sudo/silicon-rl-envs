@@ -39,7 +39,7 @@ from silicon_env.environments.openroad import config as gcd
 from silicon_env.environments.openroad import evaluator as gcd_evaluator
 from silicon_env.environments.openroad import flow as gcd_flow
 from silicon_env.grader import GradeResult
-from silicon_env.runner import DEFAULT_ENV_ALLOWLIST, ToolRunner
+from silicon_env.runner import ToolRunner
 from silicon_env.types import ContractError, GradeStatus, Provenance
 
 ClockFn = Callable[[], float]
@@ -76,12 +76,11 @@ def _normalize_rel(rel: Any) -> str:
     return "/".join(parts)
 
 
-def default_flow_runner() -> ToolRunner:
-    """Build a real backend runner with the fixed flow tool registered."""
-    return ToolRunner(
-        tools={gcd_flow.FLOW_TOOL_NAME: ["make"]},
-        env_allowlist=[*DEFAULT_ENV_ALLOWLIST, *gcd_flow.FLOW_ENV_KEYS],
-    )
+def default_flow_runner():
+    """Build the per-invocation restricted, digest-pinned Docker runner."""
+    from silicon_env.environments.openroad.runtime import GcdContainerRunner
+
+    return GcdContainerRunner()
 
 
 class GcdEnvironment(BaseEnvironment):
@@ -375,6 +374,16 @@ class GcdEnvironment(BaseEnvironment):
         tail = self._runner_log_tails(flow_result)
         if tail:
             lines.append(tail)
+        from silicon_env.environments.openroad.reports import parse_generated_reports
+
+        if getattr(flow_result, "provenance", {}).get("output_dir"):
+            parsed = parse_generated_reports(flow_result)
+            if parsed.valid and parsed.drc_count == 0 and parsed.unconstrained_paths == 0:
+                lines.append(
+                    f"cell_area: {parsed.area_um2} um^2 "
+                    f"wns: {parsed.wns_ns} ns tns: {parsed.tns_ns} ns "
+                    "routed_completion: true"
+                )
         return sanitize_tail("\n".join(lines), limit=self._obs_tail_limit)
 
     def _runner_log_tails(self, flow_result: Any) -> str:

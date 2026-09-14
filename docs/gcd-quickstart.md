@@ -1,178 +1,128 @@
-# GCD deterministic quickstart: reset to grade (M1-10)
+# GCD deterministic quickstart
 
-One trustworthy environment end to end: the pinned `gcd-nangate45` task
-from a clean checkout to a trusted grade, with no manual file edits.
-Every step is an exact command; every output is machine-readable
-(`summary.json`, `trace.jsonl`, `manifest.json`).
+M1's real-tool release gate is **not yet verified**. The host commands below launch
+flows inside the pinned Linux amd64 image. Pulling the image alone does not put
+EDA tools on the host. Do not interpret the default unit tests as a GCD run.
 
-Pinned profile (mirror of `toolchain.lock.json`, do not float these):
+## 0. Prepare a Linux x86_64 host
 
-- ORFS commit `036d106273e66855cd5214d49518fd0f0df7de61` (tag `26Q2`)
-- Image
-  `docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61`
-- Supported architecture: **linux/amd64 only**
-  (`platform_support`: os `linux`, arch `x86_64`/`amd64`). Apple-silicon
-  hosts must use the Linux route (container/VM); native macOS EDA
-  execution is out of scope.
-
-## 0. Provision the Linux route
+From the silicon-rl-envs repository on a Linux host with Docker running:
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+export ORFS_IMAGE='docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61'
+docker pull "$ORFS_IMAGE"
 git init orfs
 git -C orfs remote add origin https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts
 git -C orfs fetch --depth 1 origin 036d106273e66855cd5214d49518fd0f0df7de61
 git -C orfs checkout 036d106273e66855cd5214d49518fd0f0df7de61
 export ORFS_CHECKOUT="$PWD/orfs"
-
-docker pull 'docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61'
+mkdir -p gcd-evidence
 ```
 
-## 1. Preflight (fail closed before any flow)
+Run the Python commands on the host. Preflight probes binaries inside the
+pinned image. Every flow, including each independent grade, launches a new
+restricted container: no network, non-root UID, read-only root filesystem,
+dropped capabilities, 1 CPU and 4 GiB memory limit. Only disposable copies of
+trusted flow sources and fresh outputs are mounted. The agent workspace,
+original source checkout and Docker socket are never mounted.
+
+The source checkout pins flow inputs; tools come from the digest-pinned
+image. Preflight rejects a wrong Git revision or modified/extra flow inputs.
+Source-copy disk overhead and actual EDA peak memory remain unmeasured.
+
+## 1. Preflight and baseline (before scoring)
 
 ```bash
 python scripts/check_openroad.py --orfs-checkout "$ORFS_CHECKOUT"
-echo "preflight exit: $?"
+python scripts/generate_openroad_baseline.py \
+  --orfs-checkout "$ORFS_CHECKOUT" \
+  --output "$PWD/gcd-evidence/baseline.json" --seed 7 --timeout-s 7200
+export SILICON_GCD_BASELINE="$PWD/gcd-evidence/baseline.json"
 ```
 
-Exit `0` means the tools, pinned assets, architecture, and resource
-floor all check out. Any `FAIL:` line is a blocker diagnosis (see
-[Failure diagnosis](#failure-diagnosis)); nothing has run yet.
+Baseline generation performs three independent stock runs. Every invocation
+has its own `WORK_HOME`, final artifacts, and reports. The record includes
+probed tool versions and total elapsed time. EDA peak RSS stays unknown until
+measured inside the container; Docker-client RSS is not substituted. Generation fails
+closed on invalid metrics or drift. A verified baseline measures the stock
+reference; it does not waive the grader's zero-negative-slack and correctness
+gates. No measured stock timing or reward is promised before this runs.
 
-## 2. Reset-to-grade: scripted episode, then independent regrade
-
-Write the task and an explicit action script (no hand-editing of
-workspace files at any point):
+## 2. Reset, inspect, edit, run, submit, and independently regrade
 
 ```bash
-python - <<'EOF'
+python - <<'PY'
 import json
-from silicon_env.environments.openroad import config as gcd
+from dataclasses import replace
 from pathlib import Path
-Path("/tmp/gcd-task.json").write_text(
-    gcd.make_gcd_task(seed=7).to_json() + "\n")
+from silicon_env.environments.openroad import config as gcd
+root = Path("gcd-evidence")
+task = gcd.make_gcd_task(seed=7, max_wallclock_s=14400)
+task = replace(task, grader=replace(task.grader, timeout_s=7200))
+(root / "task.json").write_text(task.to_json() + "\n")
 actions = [
-    {"action_type": "read_file",
-     "params": {"path": "candidate.json"}},
-    {"action_type": "write_file",
-     "params": {"path": "candidate.json",
-                "content": json.dumps(
-                    {"PLACE_DENSITY": 0.5, "CORE_UTILIZATION": 55.0})}},
-    {"action_type": "run_tool",
-     "params": {"tool": "openroad-flow"}},
+    {"action_type": "read_file", "params": {"path": "candidate.json"}},
+    {"action_type": "write_file", "params": {
+        "path": "candidate.json",
+        "content": json.dumps({"PLACE_DENSITY": 0.5, "CORE_UTILIZATION": 55})}},
+    {"action_type": "run_tool", "params": {"tool": "openroad-flow"}},
     {"action_type": "submit", "params": {}},
 ]
-Path("/tmp/gcd-actions.json").write_text(json.dumps(actions, indent=2) + "\n")
-EOF
-
-python scripts/run_task.py --task /tmp/gcd-task.json \
-    --actions /tmp/gcd-actions.json --output-dir /tmp/gcd-out
-echo "run exit: $?"
-cat /tmp/gcd-out/summary.json
+(root / "actions.json").write_text(json.dumps(actions))
+PY
+python scripts/run_task.py --task gcd-evidence/task.json \
+  --actions gcd-evidence/actions.json --output-dir gcd-evidence/episode
+cat gcd-evidence/episode/summary.json
+python scripts/grade_task.py --submission-dir gcd-evidence/episode
 ```
 
-Without `ORFS_CHECKOUT` at the pinned commit this fails closed as
-infrastructure (exit `3`) but still persists machine-readable outputs.
-With the pinned checkout it runs the fixed `final` endpoint and the
-independent clean-room evaluator produces the grade.
+Both CLI commands honor `SILICON_GCD_BASELINE`. The default packaged record
+is intentionally unverified and cannot score. Output directories must be
+fresh. Exit codes: `0` pass, `2` invalid submission/grading failure,
+`3` infrastructure/usage failure.
 
-Regrade the saved submission without re-running the agent episode
-(trusted re-run from `candidate.json` bytes only):
+## 3. Deterministic release gate
 
 ```bash
-python scripts/grade_task.py --submission-dir /tmp/gcd-out
-echo "grade exit: $?"
+SILICON_RUN_GCD_E2E=1 GATE_SEED=7 GATE_TIMEOUT_S=7200 \
+python -m pytest tests/integration/test_gcd_e2e.py -v \
+  --basetemp="$PWD/gcd-evidence/gate"
 ```
 
-Exit codes (both commands): `0` pass, `2` invalid submission or
-grading failure, `3` infrastructure or usage failure.
+The gate compares three episodes' semantic traces, metrics, and rewards,
+then checks stock/legal/invalid candidates, forgery rejection, and budgets.
+An explicitly enabled gate with an invalid checkout or baseline fails;
+ordinary tests skip real EDA runs. Task seeds are forwarded to detailed routing via OR_SEED (modulo 2**31);
+other stages have no explicit seed control wired by the adapter. `NUM_CORES=1` and `make -j1` constrain
+tool and build parallelism separately.
 
-## 3. Baseline generation (verified record, stock x3)
+The manual `openroad-integration` GitHub Actions workflow runs on a Linux host and launches
+the same per-invocation restricted containers.
+It retains the baseline and compact traces/manifests for seven days.
 
-```bash
-python scripts/generate_openroad_baseline.py \
-    --orfs-checkout "$ORFS_CHECKOUT" \
-    --output /tmp/gcd-baseline.json \
-    --seed 7 --timeout-s 7200
-```
+## Report and evidence contract
 
-Exits nonzero on any validity failure or unexplained metric drift, and
-writes nothing on failure (never fabricated values). To score with it,
-point grading at this record (see the release-gate step below).
+Paths under each invocation's `outputs/`:
 
-## 4. Deterministic release gate (opt-in, real pinned toolchain)
+- `reports/nangate45/gcd/default/6_finish.rpt`: final WNS/TNS.
+- `logs/nangate45/gcd/default/6_report.log`: final design cell area.
+- `logs/nangate45/gcd/default/5_2_route.json`: routed DRC count.
+- `reports/nangate45/gcd/default/6_unconstrained.rpt`: the trusted final
+  hook's OpenSTA unconstrained-endpoint check.
+- `results/nangate45/gcd/default/6_final.{gds,def,v}`: required fresh final artifacts.
 
-```bash
-SILICON_RUN_GCD_E2E=1 \
-ORFS_CHECKOUT="$ORFS_CHECKOUT" \
-SILICON_GCD_BASELINE=/tmp/gcd-baseline.json \
-python -m pytest tests/integration/test_gcd_e2e.py -v
-```
+Missing, stale, malformed or failed-flow evidence cannot yield a passing
+grade. Report paths and commands were checked against the pinned upstream
+source, including [ORFS report generation](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/036d106273e66855cd5214d49518fd0f0df7de61/flow/scripts/report_metrics.tcl)
+and [OpenSTA setup checks](https://github.com/The-OpenROAD-Project/OpenSTA/blob/43177bba8f5f88dfb7dc35795242080a4fe2e986/search/Search.tcl).
+They still require a real pinned-image run.
 
-This runs three fresh episodes with the same seed + actions and checks
-identical semantic trace hashes, metrics within the
-declared tolerances, equal rewards, stock/legal/invalid handling,
-tamper rejection, and budget exhaustion. Everything skips by default;
-without `SILICON_RUN_GCD_E2E=1` + `ORFS_CHECKOUT` each test reports
-its blocked reason instead of running.
+## Remaining release evidence
 
-The same gate logic runs with fakes in the default fast suite (no
-EDA/Docker/network):
-
-```bash
-python -m pytest tests/test_gcd_release_gate.py -q
-```
-
-The manual CI route (`.github/workflows/openroad-integration.yml`,
-workflow_dispatch only, single worker, 7-day compact artifact
-retention) runs steps 0-4 on a provisioned Linux worker.
-
-## 5. Larger Linux machine
-
-Same commands, with an explicit resource floor check first:
-
-```bash
-python scripts/check_openroad.py --orfs-checkout "$ORFS_CHECKOUT" \
-    --min-ram-gb 8 --min-cpus 4
-python scripts/generate_openroad_baseline.py \
-    --orfs-checkout "$ORFS_CHECKOUT" \
-    --output /tmp/gcd-baseline.json \
-    --seed 7 --timeout-s 7200
-SILICON_RUN_GCD_E2E=1 \
-ORFS_CHECKOUT="$ORFS_CHECKOUT" \
-SILICON_GCD_BASELINE=/tmp/gcd-baseline.json \
-python -m pytest tests/integration/test_gcd_e2e.py -v
-```
-
-Record the measured wallclock and peak RSS from the baseline run into
-the table below when a provisioned run completes.
-
-## Measured RAM/runtime
-
-| Step | Wallclock | Peak RSS | Machine | Status |
-| --- | --- | --- | --- | --- |
-| Preflight | TBD | n/a | Mac arm64, 8 GB RAM | Blocked: container daemon stopped, image is linux/amd64 |
-| Stock flow x3 (baseline) | TBD-unverified | TBD-unverified | TBD | Blocked: no EDA/Linux run attempted on dev host |
-| Release gate (3 episodes + grading) | TBD-unverified | TBD-unverified | TBD | Blocked: same as above |
-| Reference GCD run (`resources.reference_run`) | TBD-unverified | TBD-unverified | TBD | See `toolchain.lock.json`: do not promise 8 GB support before measuring |
-
-No values are claimed until a real pinned run measures them. Binary
-tool versions are likewise TBD until a pinned-image run probes them.
-
-## Failure diagnosis
-
-| Symptom | Meaning | Where to look |
-| --- | --- | --- |
-| `FAIL: tool 'openroad' not found on PATH` | EDA tools absent; use the Linux route with the pinned image | Preflight output; `toolchain.lock.json` `tools` |
-| `FAIL: required asset missing: ...` | Checkout is not the pinned commit or is incomplete | Re-fetch `036d1062...` per step 0 |
-| `FAIL: unsupported OS/architecture` | Host is not linux/amd64 (e.g. Mac arm64) | Run on the Linux route; Mac runs stay skipped/TBD |
-| `FAIL: insufficient RAM/CPUs` | Below the reference-run floor | Larger machine (step 5) |
-| `run exit: 2` (`invalid_submission`) | Bad candidate content (unknown key, out-of-range value, injection string, malformed JSON) | `summary.json` `message`, `trace.jsonl` step event; workspace is NOT mutated |
-| `run exit: 3` (`infra_error`) | Missing `ORFS_CHECKOUT`, bad paths, non-empty `--output-dir`, tool crash | stderr `error:` line, `summary.json` `status`, `manifest.json` |
-| Gate reports `no parseable final metrics` | Report discovery found nothing usable under the flow workdir (possible on-disk layout drift) | Flow scratch logs; `flow.py` declared artifact contract |
-| Gate reports metric drift | Runs disagree beyond tolerances | Per-run traces/manifests in the uploaded gate evidence (7-day retention) |
-| `baseline-invalid` reason code | Baseline record is `TBD-unverified` or pins drifted | Generate a verified baseline (step 3); never score against TBD |
-
-Tampering cannot improve a grade by construction: the evaluator
-re-runs from `candidate.json` bytes in a fresh scratch, agent-visible
-numbers are never read, and forged files inside the submission are
-rejected (`unauthorized-file` / `protected-asset`, reward `0.0`).
+Stock area/timing, actual binary versions, three-run determinism, and EDA
+RAM/runtime remain **TBD-unverified**. No heavy flow or image pull was run on
+the Mac review host. Keep raw reports for diagnosis if the gate fails;
+fix the cause rather than relaxing tolerances or correctness requirements.

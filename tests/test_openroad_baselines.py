@@ -150,7 +150,7 @@ class ScriptedFlow:
             stage_reached="final",
             artifacts={},
             provenance={"endpoint": "final"},
-            message=f"fake final area: {area} um^2 routed_completion: true",
+            message=f"fake final area: {area} um^2 wns: 0 ns tns: 0 ns routed_completion: true",
         )
 
 
@@ -442,3 +442,23 @@ def test_real_pinned_baselines_opt_in(tmp_path):
         _ = (noop_result.score, search_result.score, search_result.improved)
     finally:
         search_env.close()
+
+
+def test_search_does_not_choose_smaller_timing_violating_candidate(tmp_path):
+    from dataclasses import replace
+
+    class TimingFlow(ScriptedFlow):
+        def __call__(self, candidate, **kwargs):
+            result = super().__call__(candidate, **kwargs)
+            if len(self.calls) == 2:
+                result = replace(result, message=result.message.replace("wns: 0", "wns: -1"))
+            return result
+
+    flow = TimingFlow([1000, 100, 950, 975])
+    env = make_env(tmp_path, flow)
+    try:
+        result = run_search_agent(env, gcd.make_gcd_task(seed=7), 7)
+        assert result.best_index == 2
+        assert not result.records[1].feasible
+    finally:
+        env.close()

@@ -294,7 +294,13 @@ def run_search_agent(
             ]
         )
         parsed = parse_observed_metrics(text)
-        feasible = run.status == StepStatus.SUCCESS
+        feasible = (
+            run.status == StepStatus.SUCCESS
+            and parsed["area_um2"] is not None and parsed["area_um2"] > 0
+            and parsed["wns_ns"] is not None and parsed["wns_ns"] >= 0
+            and parsed["tns_ns"] == 0
+            and parsed["completion_text"]
+        )
         records.append(
             CandidateRecord(
                 index=index,

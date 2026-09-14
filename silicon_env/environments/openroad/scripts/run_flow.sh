@@ -19,12 +19,10 @@
 #
 # Notes:
 #   - Single thread: `make -j1` plus OMP_NUM_THREADS=1, TZ=UTC.
-#   - ORFS make offers no seed passthrough for the GCD flow; FLOW_SEED, if
+#   - This wrapper retains pinned router defaults; FLOW_SEED, if
 #     set, is recorded in the log header but NOT forwarded (see adapter
 #     provenance `seed_passthrough_supported=false`).
-#   - Flow outputs land under $ORFS_CHECKOUT/flow/{results,logs,reports}
-#     (standard ORFS behavior). Use a throwaway checkout copy or a
-#     container overlay to keep a pristine pin untouched.
+#   - Outputs go under fresh WORK_HOME (default: a new temporary directory).
 set -euo pipefail
 
 ORFS_CHECKOUT="${ORFS_CHECKOUT:?set ORFS_CHECKOUT to the pinned ORFS checkout}"
@@ -37,21 +35,44 @@ REPO_ROOT="${REPO_ROOT:-$(cd "${SCRIPT_DIR}/../../../.." && pwd)}"
 
 if [ "${SILICON_SKIP_PREFLIGHT:-0}" != "1" ]; then
   python3 "${REPO_ROOT}/scripts/check_openroad.py" \
-    --orfs-checkout "${ORFS_CHECKOUT}"
+    --native-tools --orfs-checkout "${ORFS_CHECKOUT}"
 fi
 
+if [ "$#" -ne 0 ]; then
+  echo "run_flow: extra make arguments are not supported" >&2
+  exit 2
+fi
+if [ "$FLOW_VARIANT" != "default" ]; then
+  echo "run_flow: FLOW_VARIANT must be default" >&2
+  exit 2
+fi
+python3 - "$PLACE_DENSITY" "$CORE_UTILIZATION" <<'PYCODE'
+import sys
+from silicon_env.environments.openroad.config import validate_candidate_config
+validate_candidate_config({"PLACE_DENSITY": float(sys.argv[1]),
+                           "CORE_UTILIZATION": float(sys.argv[2])})
+PYCODE
+WORK_HOME="${WORK_HOME:-$(mktemp -d)}"
+mkdir -p "$WORK_HOME"
+if [ -n "$(ls -A "$WORK_HOME")" ]; then
+  echo "run_flow: WORK_HOME must be empty" >&2
+  exit 2
+fi
+WORK_HOME="$(cd "$WORK_HOME" && pwd)"
+export PYTHONDONTWRITEBYTECODE=1
 export OMP_NUM_THREADS=1
 export TZ=UTC
 
 echo "run_flow: endpoint=final design=gcd platform=nangate45"
 echo "run_flow: variant=${FLOW_VARIANT} place_density=${PLACE_DENSITY} \\"
 echo "  core_utilization=${CORE_UTILIZATION} seed=${FLOW_SEED} (record-only)"
-echo "run_flow: checkout=${ORFS_CHECKOUT}"
+echo "run_flow: checkout=${ORFS_CHECKOUT} outputs=${WORK_HOME}"
 
 exec make -C "${ORFS_CHECKOUT}/flow" \
   DESIGN_CONFIG=./designs/nangate45/gcd/config.mk \
   "FLOW_VARIANT=${FLOW_VARIANT}" \
   "PLACE_DENSITY=${PLACE_DENSITY}" \
   "CORE_UTILIZATION=${CORE_UTILIZATION}" \
-  -j1 \
-  "$@"
+  "WORK_HOME=${WORK_HOME}" \
+  "POST_FINAL_REPORT_TCL=${SCRIPT_DIR}/final_evidence.tcl" \
+  NUM_CORES=1 -j1 final

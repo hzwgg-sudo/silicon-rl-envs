@@ -1,5 +1,11 @@
 # OpenROAD GCD toolchain profile (M1-01)
 
+For executable container setup and scoring instructions, use
+[the GCD quickstart](../../../docs/gcd-quickstart.md). Every flow now uses
+its own WORK_HOME output tree and the production evaluator reads the pinned
+final report paths automatically. The real EDA gate remains unverified.
+
+
 Pinned, deterministic execution profile for the scored GCD/nangate45 flow.
 Ticket M1-01. This directory holds the immutable pin; later M1 tickets
 (task config, flow, metrics, grader, env) build on it.
