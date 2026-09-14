@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "ticket": "M1-01",
+  "design": {
+    "name": "gcd",
+    "platform": "nangate45",
+    "flow_entry": "flow/Makefile",
+    "design_config": "flow/designs/nangate45/gcd/config.mk",
+    "sdc": "flow/designs/nangate45/gcd/constraint.sdc",
+    "rtl": ["flow/designs/src/gcd/gcd.v"],
+    "pdn_config": "flow/designs/nangate45/gcd/grid_strategy-M1-M4-M7.tcl",
+    "clock_period_ns": 0.46,
+    "notes": "Default ORFS tutorial design. Verified present at the pinned ORFS commit."
+  },
+  "orfs": {
+    "repo": "https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts",
+    "tag": "26Q2",
+    "commit": "036d106273e66855cd5214d49518fd0f0df7de61",
+    "commit_date": "2026-04-07T15:37:21Z",
+    "tag_date": "2026-04-07T15:38:17Z",
+    "provenance": "Quarterly release tag resolved via git ls-remote and the GitHub API on 2026-09-14; design/config paths re-verified against raw files at the pinned commit.",
+    "license": "ORFS is BSD-3-Clause (see upstream LICENSE); Nangate45 platform files carry their own LICENSE in flow/platforms/nangate45."
+  },
+  "sources": {
+    "openroad": {
+      "repo": "https://github.com/The-OpenROAD-Project/OpenROAD",
+      "commit": "0e2d771c5ec38f232493c2afea738ea0200cb972",
+      "commit_date": "2026-04-06T03:38:32Z",
+      "provenance": "ORFS tools/OpenROAD gitlink at the pinned ORFS commit, resolved via the GitHub API."
+    },
+    "yosys": {
+      "repo": "https://github.com/The-OpenROAD-Project/yosys",
+      "commit": "d3e297fcd479247322f83d14f42b3556db7acdfb",
+      "commit_date": "2026-03-04T08:31:22Z",
+      "upstream_release_hint": "v0.63",
+      "provenance": "ORFS tools/yosys gitlink at the pinned ORFS commit; hint comes from the upstream merge message and is NOT a probed binary version."
+    },
+    "yosys_slang": {
+      "repo": "https://github.com/povik/yosys-slang",
+      "commit": "64b44616a3798f07453b14ea03e4ac8a16b77313",
+      "commit_date": "2026-01-02T10:57:11Z",
+      "provenance": "ORFS tools/yosys-slang gitlink at the pinned ORFS commit, resolved via the GitHub API."
+    }
+  },
+  "image": {
+    "repository": "docker.io/openroad/orfs",
+    "tag": "26Q2",
+    "digest": "sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61",
+    "pinned_ref": "docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61",
+    "arch": "amd64",
+    "os": "linux",
+    "per_arch_digest": "sha256:567adb45abbf51f58a3772a39567ca744b19e33ea9c73e612d0f3fae7bf5c318",
+    "size_bytes": 1581453587,
+    "tag_pushed": "2026-04-07T15:58:42Z",
+    "provenance": "Docker Hub API for openroad/orfs tag 26Q2 on 2026-09-14. Pull by digest; never by floating tag. The tag push date matches the ORFS 26Q2 release commit date."
+  },
+  "tools": {
+    "openroad": {
+      "probe_argv": ["openroad", "-version"],
+      "version": {"status": "unverified", "value": null},
+      "notes": "Binary version TBD until a real pinned-image run probes it. Preflight warns (does not fail) on this entry."
+    },
+    "yosys": {
+      "probe_argv": ["yosys", "-V"],
+      "version": {"status": "unverified", "value": null},
+      "notes": "Binary version TBD until a real pinned-image run probes it. Preflight warns (does not fail) on this entry."
+    },
+    "make": {
+      "probe_argv": ["make", "--version"],
+      "version": {"status": "any", "value": null},
+      "notes": "Any GNU Make accepted; only presence is gated."
+    }
+  },
+  "required_assets": [
+    "flow/Makefile",
+    "flow/designs/nangate45/gcd/config.mk",
+    "flow/designs/nangate45/gcd/constraint.sdc",
+    "flow/designs/src/gcd/gcd.v",
+    "flow/platforms/nangate45/config.mk",
+    "flow/platforms/nangate45/lef/NangateOpenCellLibrary.tech.lef",
+    "flow/platforms/nangate45/lib/NangateOpenCellLibrary_typical.lib"
+  ],
+  "platform_support": {
+    "os": ["linux"],
+    "arch": ["x86_64", "amd64"],
+    "notes": "Pinned image is linux/amd64 only. Apple-silicon hosts must run the Linux route (container/VM); native macOS EDA execution is explicitly out of scope."
+  },
+  "resources": {
+    "single_worker": {"cpus": 1, "jobs": 1, "memory": "see required_minimum"},
+    "required_minimum": {"cpus": 2, "memory_gb": 4.0},
+    "reference_run": {
+      "status": "TBD-unverified",
+      "wallclock_s": null,
+      "peak_rss_gb": null,
+      "machine": null,
+      "notes": "No reference GCD run has been measured. The M0 silicon-m0 container profile (2 CPU/2GiB) is NOT evidence for OpenROAD. Do not promise 8 GB support; measure on the Linux route before claiming."
+    }
+  },
+  "execution": {
+    "workdir": "/OpenROAD-flow-scripts/flow",
+    "flow_command": ["make", "DESIGN_CONFIG=./designs/nangate45/gcd/config.mk"],
+    "env": {"FLOW_VARIANT": "default"}
+  },
+  "verification": {
+    "status": "blocked-real-run",
+    "blocked_reason": "No pinned-image pull or flow run attempted: dev host is a Mac arm64/8GB box with the container daemon stopped, and a full ORFS run is out of scope for this ticket on that host. Binary versions and reference RAM/time stay TBD until a Linux run probes them.",
+    "checked_on": "2026-09-14",
+    "checked_host": "Mac arm64, 8 GB RAM, Docker client 29.8.0 with daemon stopped"
+  },
+  "licenses": {
+    "orfs": "BSD-3-Clause (upstream)",
+    "nangate45_platform": "See flow/platforms/nangate45/LICENSE in the pinned checkout; Nangate OCL README describes it as an open-source non-manufacturable research library, PDKv1.3_v2010_12.Apache.CCL.",
+    "bundled_assets": "none: this repo vendors no PDK files, GDS, or LEF/LIB blobs."
+  }
+}
