@@ -75,7 +75,9 @@ class GcdContainerRunner:
             evidence.chmod(0o644)
             constraints = base / "constraint.sdc"
             shutil.copyfile(config.FIXED_SDC_PATH, constraints)
-            constraints.chmod(0o444)
+            # ORFS copies this mode to its output SDC before rewriting it.
+            # The input stays immutable through its read-only bind mount.
+            constraints.chmod(0o644)
             # Hosts running as root still launch a non-root container. These
             # disposable copies are the only writable mounts exposed to it.
             for directory, _, files in os.walk(source):

@@ -206,6 +206,10 @@ def test_restricted_runtime_mounts_only_disposable_copies(tmp_path):
             assert set(mounts) == {"/flow", "/outputs", "/trusted/final_evidence.tcl",
                                    "/trusted/constraint.sdc"}
             assert mounts["/trusted/constraint.sdc"].readonly
+            constraint = Path(mounts["/trusted/constraint.sdc"].host_path)
+            # ORFS preserves mode when copying, then rewrites its output SDC.
+            assert constraint.stat().st_mode & 0o200
+            assert constraint.read_bytes() == config.FIXED_SDC_PATH.read_bytes()
             assert "SDC_FILE=/trusted/constraint.sdc" in args
             assert mounts["/trusted/final_evidence.tcl"].readonly
             for mount in mounts.values():
