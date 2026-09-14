@@ -120,9 +120,21 @@ source, including [ORFS report generation](https://github.com/The-OpenROAD-Proje
 and [OpenSTA setup checks](https://github.com/The-OpenROAD-Project/OpenSTA/blob/43177bba8f5f88dfb7dc35795242080a4fe2e986/search/Search.tcl).
 They still require a real pinned-image run.
 
-## Remaining release evidence
+## Qualification status
 
-Stock area/timing, actual binary versions, three-run determinism, and EDA
-RAM/runtime remain **TBD-unverified**. No heavy flow or image pull was run on
-the Mac review host. Keep raw reports for diagnosis if the gate fails;
-fix the cause rather than relaxing tolerances or correctness requirements.
+[Linux run 34887304175](https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34887304175)
+completed stock routing three times with identical metrics: area 903.336 um²,
+WNS −0.04544 ns, TNS −0.737691 ns, DRC 0, unconstrained endpoints 0.
+The fixed 0.46 ns task therefore fails timing and cannot produce an approved
+baseline. The release gate remains blocked on benchmark feasibility.
+
+OpenROAD/Yosys versions are now probed and pinned. Stock end-to-end flow
+elapsed times were 82.58, 83.67 and 83.21 seconds. Maximum GNU-time child RSS
+was 0.783 GiB (not whole-cgroup memory). The runner enforced 1 CPU and a 4 GiB
+memory cap. See [the measured qualification record](m1-stock-qualification.json).
+
+The production parser uses full-precision `6_report.json` timing and standard
+cell area; rounded text must not conceal small negative slack. Real reports
+are retained in `tests/fixtures/openroad/real-26Q2` for regression tests.
+A benchmark-specification decision is required before changing the pinned
+clock target; the zero-negative-slack grader has not been relaxed.

@@ -7,7 +7,9 @@
     "flow_entry": "flow/Makefile",
     "design_config": "flow/designs/nangate45/gcd/config.mk",
     "sdc": "flow/designs/nangate45/gcd/constraint.sdc",
-    "rtl": ["flow/designs/src/gcd/gcd.v"],
+    "rtl": [
+      "flow/designs/src/gcd/gcd.v"
+    ],
     "pdn_config": "flow/designs/nangate45/gcd/grid_strategy-M1-M4-M7.tcl",
     "clock_period_ns": 0.46,
     "notes": "Default ORFS tutorial design. Verified present at the pinned ORFS commit."
@@ -56,18 +58,36 @@
   },
   "tools": {
     "openroad": {
-      "probe_argv": ["openroad", "-version"],
-      "version": {"status": "unverified", "value": null},
-      "notes": "Binary version TBD until a real pinned-image run probes it. Preflight warns (does not fail) on this entry."
+      "probe_argv": [
+        "openroad",
+        "-version"
+      ],
+      "version": {
+        "status": "verified",
+        "value": "26Q1-2938-g0e2d771c5e"
+      },
+      "notes": "Probed in digest-pinned image in Linux run 34887304175, 2026-09-14."
     },
     "yosys": {
-      "probe_argv": ["yosys", "-V"],
-      "version": {"status": "unverified", "value": null},
-      "notes": "Binary version TBD until a real pinned-image run probes it. Preflight warns (does not fail) on this entry."
+      "probe_argv": [
+        "yosys",
+        "-V"
+      ],
+      "version": {
+        "status": "verified",
+        "value": "Yosys 0.63+post (git sha1 UNKNOWN-dirty, g++ 11.4.0-1ubuntu1~22.04.3 -fPIC -O3)"
+      },
+      "notes": "Probed in digest-pinned image in Linux run 34887304175, 2026-09-14."
     },
     "make": {
-      "probe_argv": ["make", "--version"],
-      "version": {"status": "any", "value": null},
+      "probe_argv": [
+        "make",
+        "--version"
+      ],
+      "version": {
+        "status": "any",
+        "value": null
+      },
       "notes": "Any GNU Make accepted; only presence is gated."
     }
   },
@@ -81,31 +101,49 @@
     "flow/platforms/nangate45/lib/NangateOpenCellLibrary_typical.lib"
   ],
   "platform_support": {
-    "os": ["linux"],
-    "arch": ["x86_64", "amd64"],
+    "os": [
+      "linux"
+    ],
+    "arch": [
+      "x86_64",
+      "amd64"
+    ],
     "notes": "Pinned image is linux/amd64 only. Apple-silicon hosts must run the Linux route (container/VM); native macOS EDA execution is explicitly out of scope."
   },
   "resources": {
-    "single_worker": {"cpus": 1, "jobs": 1, "memory": "see required_minimum"},
-    "required_minimum": {"cpus": 2, "memory_gb": 4.0},
+    "single_worker": {
+      "cpus": 1,
+      "jobs": 1,
+      "memory": "see required_minimum"
+    },
+    "required_minimum": {
+      "cpus": 2,
+      "memory_gb": 4.0
+    },
     "reference_run": {
-      "status": "TBD-unverified",
-      "wallclock_s": null,
-      "peak_rss_gb": null,
-      "machine": null,
-      "notes": "No reference GCD run has been measured. The M0 silicon-m0 container profile (2 CPU/2GiB) is NOT evidence for OpenROAD. Do not promise 8 GB support; measure on the Linux route before claiming."
+      "status": "measured-flow-complete-timing-infeasible",
+      "wallclock_s": 82.58494901657104,
+      "peak_rss_gb": 0.7831459045410156,
+      "machine": "GitHub ubuntu-24.04 Linux x86_64; restricted Docker: 1 CPU, 4 GiB cap",
+      "notes": "Three routed runs matched metrics exactly but fail the 0.46 ns timing task. RSS is GNU time max child RSS, not whole-cgroup memory. Run 34887304175."
     }
   },
   "execution": {
     "workdir": "/OpenROAD-flow-scripts/flow",
-    "flow_command": ["make", "DESIGN_CONFIG=./designs/nangate45/gcd/config.mk"],
-    "env": {"FLOW_VARIANT": "default"}
+    "flow_command": [
+      "make",
+      "DESIGN_CONFIG=./designs/nangate45/gcd/config.mk"
+    ],
+    "env": {
+      "FLOW_VARIANT": "default"
+    }
   },
   "verification": {
-    "status": "blocked-real-run",
-    "blocked_reason": "No pinned-image pull or flow run attempted: dev host is a Mac arm64/8GB box with the container daemon stopped, and a full ORFS run is out of scope for this ticket on that host. Binary versions and reference RAM/time stay TBD until a Linux run probes them.",
+    "status": "real-flow-complete-timing-infeasible",
+    "blocked_reason": "Stock WNS -0.04544 ns and TNS -0.737691 ns violate the fixed 0.46 ns clock task. Release gate remains unqualified.",
     "checked_on": "2026-09-14",
-    "checked_host": "Mac arm64, 8 GB RAM, Docker client 29.8.0 with daemon stopped"
+    "checked_host": "GitHub ubuntu-24.04 x86_64",
+    "run_url": "https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34887304175"
   },
   "licenses": {
     "orfs": "BSD-3-Clause (upstream)",

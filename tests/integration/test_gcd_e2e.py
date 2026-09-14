@@ -427,3 +427,29 @@ def test_tiny_budget_times_out_without_new_tool_call(tmp_path):
         assert calls == []
     finally:
         env.close()
+
+
+@NEEDS_GATE
+def test_real_noop_and_bounded_search_agents(tmp_path):
+    from silicon_env.agents.baseline import run_noop_agent
+    from silicon_env.agents.openroad_search import run_search_agent
+
+    checkout = _require_checkout()
+    baseline_record = _load_baseline_record()
+    outcomes = {}
+    for name, agent in (("noop", run_noop_agent), ("search", run_search_agent)):
+        env = _make_real_env(tmp_path / name, checkout, baseline_record)
+        try:
+            result = agent(env, _real_task(GATE_SEED), GATE_SEED)
+            assert result.grade is not None
+            assert result.grade.passed, result.grade.message
+            outcomes[name] = {"score": result.score, "actions": list(result.actions)}
+            if name == "search":
+                outcomes[name]["improved"] = result.improved
+                outcomes[name]["candidate"] = result.submitted_candidate
+            else:
+                assert result.tool_calls_used == 0
+                assert result.score == pytest.approx(0.5, abs=0.005)
+        finally:
+            env.close()
+    (tmp_path / "agent-results.json").write_text(json.dumps(outcomes, indent=2) + "\n")

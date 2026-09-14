@@ -178,13 +178,13 @@ def _parse_number(token: str) -> float | None:
 # --- report line patterns -----------------------------------------------------
 
 _WNS_RES = (
-    re.compile(rf"\bwns\b\s*[:=]?\s*({_NUMBER}|[A-Za-z+-]+)\s*(ns|ps|us|ms|s)?\b",
+    re.compile(rf"\bwns\b\s*[:=]?\s*(?:max\s+)?({_NUMBER}|[A-Za-z+-]+)\s*(ns|ps|us|ms|s)?\b",
                re.IGNORECASE),
     re.compile(rf"\bworst\s+(negative\s+)?slack\b[^0-9A-Za-z+-]*({_NUMBER}|[A-Za-z+-]+)"
                r"\s*(ns|ps|us|ms|s)?\b", re.IGNORECASE),
 )
 _TNS_RES = (
-    re.compile(rf"\btns\b\s*[:=]?\s*({_NUMBER}|[A-Za-z+-]+)\s*(ns|ps|us|ms|s)?\b",
+    re.compile(rf"\btns\b\s*[:=]?\s*(?:max\s+)?({_NUMBER}|[A-Za-z+-]+)\s*(ns|ps|us|ms|s)?\b",
                re.IGNORECASE),
     re.compile(rf"\btotal\s+(negative\s+)?slack\b[^0-9A-Za-z+-]*({_NUMBER}|[A-Za-z+-]+)"
                r"\s*(ns|ps|us|ms|s)?\b", re.IGNORECASE),

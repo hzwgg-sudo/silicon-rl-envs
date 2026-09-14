@@ -8,6 +8,7 @@ status, since upstream does not emit our synthetic completion marker.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -47,6 +48,22 @@ def discover_report_texts(
 
     timing = read(Path("reports") / suffix / "6_finish.rpt")
     area = read(Path("logs") / suffix / "6_report.log")
+    # Text reports round timing to two decimals, which can hide a negative
+    # slack as -0.00. The final JSON carries the full measured precision.
+    final_json = read(Path("logs") / suffix / "6_report.json")
+    try:
+        payload = json.loads(final_json) if final_json is not None else {}
+        ws = payload["finish__timing__setup__ws"]
+        tns = payload["finish__timing__setup__tns"]
+        cell_area = payload["finish__design__instance__area__stdcell"]
+        for value in (ws, tns, cell_area):
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(value)):
+                raise ValueError("non-finite final metric")
+        timing = f"wns {min(0.0, ws)} ns\ntns {tns} ns\n" if timing else None
+        area = f"Design area {cell_area} um^2\n" if area else None
+    except (ValueError, TypeError, KeyError):
+        timing = area = None
     drc_json = read(Path("logs") / suffix / "5_2_route.json")
     drc = None
     if drc_json is not None:

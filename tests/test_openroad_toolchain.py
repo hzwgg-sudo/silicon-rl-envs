@@ -45,7 +45,7 @@ def make_checkout(tmp_path: Path, lock: dict) -> Path:
 
 
 def good_probe(name: str) -> tuple[bool, str]:
-    return (True, f"{name} fake-version")
+    return (True, load_lock()["tools"][name]["version"]["value"] or f"{name} fake-version")
 
 
 def good_kwargs(tmp_path: Path, lock: dict) -> dict:
@@ -89,15 +89,15 @@ def test_lockfile_has_no_mutable_scored_refs():
     assert "@sha256:" in lock["image"]["pinned_ref"]
 
 
-def test_lockfile_records_unverified_versions_honestly():
+def test_lockfile_records_measured_versions_and_timing_failure_honestly():
     lock = load_lock()
     for name in ("openroad", "yosys"):
         entry = lock["tools"][name]["version"]
-        assert entry["status"] == "unverified"
-        assert entry["value"] is None
+        assert entry["status"] == "verified"
+        assert entry["value"]
     ref = lock["resources"]["reference_run"]
-    assert ref["status"].startswith("TBD")
-    assert ref["wallclock_s"] is None and ref["peak_rss_gb"] is None
+    assert ref["status"] == "measured-flow-complete-timing-infeasible"
+    assert ref["wallclock_s"] > 0 and ref["peak_rss_gb"] > 0
 
 
 def test_shared_constants_match_lockfile():
@@ -140,7 +140,7 @@ def test_preflight_ok_with_all_good_fakes(tmp_path):
     assert report.ok, report.message()
     assert report.failures == []
     # TBD entries (binary versions, reference run) must surface as warnings.
-    assert report.warnings, "expected TBD-unverified warnings"
+    assert not report.warnings
 
 
 def test_preflight_missing_tool_fails(tmp_path):
@@ -169,6 +169,7 @@ def test_preflight_version_match_passes_tool_gate(tmp_path):
     lock = copy.deepcopy(load_lock())
     lock["tools"]["yosys"]["version"] = {"status": "verified", "value": "yosys fake-version"}
     kwargs = good_kwargs(tmp_path, lock)
+    kwargs["probe_tool"] = lambda name: (True, lock["tools"][name]["version"]["value"] or "make")
     report = run_preflight(lock, **kwargs)
     assert not any("mismatch" in f for f in report.failures)
 

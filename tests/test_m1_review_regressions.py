@@ -25,6 +25,8 @@ def checkout(tmp_path, monkeypatch):
     # A real Make dependency graph: reusing WORK_HOME would incorrectly cache it.
     (root / "flow" / "Makefile").write_text('''
 suffix = nangate45/gcd/default
+json_metrics = {"finish__timing__setup__ws":0,"finish__timing__setup__tns":0,
+json_metrics += "finish__design__instance__area__stdcell":$(CORE_UTILIZATION)}
 .PHONY: final
 final: $(WORK_HOME)/results/nangate45/gcd/default/6_final.gds
 $(WORK_HOME)/results/nangate45/gcd/default/6_final.gds:
@@ -33,6 +35,7 @@ $(WORK_HOME)/results/nangate45/gcd/default/6_final.gds:
 \ttouch $@ $(WORK_HOME)/results/nangate45/gcd/default/6_final.def
 \ttouch $(WORK_HOME)/results/nangate45/gcd/default/6_final.v
 \tprintf 'wns 0.0 ns\\ntns 0.0 ns\\n' > $(WORK_HOME)/reports/nangate45/gcd/default/6_finish.rpt
+\tprintf '%s' '$(json_metrics)' > $(WORK_HOME)/logs/$(suffix)/6_report.json
 \tprintf 'Design area $(CORE_UTILIZATION) u^2\\n' > $(WORK_HOME)/logs/$(suffix)/6_report.log
 ''')
     git(root, "init", "-q")
@@ -89,6 +92,10 @@ def report_result(tmp_path):
                        (area, "Design area 100 u^2\n")):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
+    (area.parent / "6_report.json").write_text(json.dumps({
+        "finish__timing__setup__ws": 0.0, "finish__timing__setup__tns": 0.0,
+        "finish__design__instance__area__stdcell": 100.0,
+    }))
     (area.parent / "5_2_route.json").write_text(
         '{"detailedroute__route__drc_errors": 0}')
     (timing.parent / "6_unconstrained.rpt").write_text("unconstrained_check_passed: 1\n")
@@ -123,6 +130,10 @@ def test_failed_flow_with_complete_reports_cannot_score(tmp_path):
 @pytest.mark.parametrize("count", [2, -1, True, "0"])
 def test_route_drc_cannot_be_ignored(tmp_path, count):
     result, _, area = report_result(tmp_path)
+    (area.parent / "6_report.json").write_text(json.dumps({
+        "finish__timing__setup__ws": 0.0, "finish__timing__setup__tns": 0.0,
+        "finish__design__instance__area__stdcell": 100.0,
+    }))
     (area.parent / "5_2_route.json").write_text(
         json.dumps({"detailedroute__route__drc_errors": count}))
     assert not parse_generated_reports(result).valid
@@ -252,3 +263,39 @@ def test_pinned_thread_and_variant_overrides_are_rejected(checkout, tmp_path):
         flow.run_gcd_flow({}, orfs_checkout=root, scratch_dir=tmp_path / "scratch",
                           runner=runner, seed=0, timeout_s=1,
                           env_overrides={"OMP_NUM_THREADS": "8"})
+
+
+def test_real_report_precision_and_stock_timing_failure(tmp_path):
+    from silicon_env.environments.openroad.grader import grade_gcd_candidate
+
+    result, timing, area = report_result(tmp_path)
+    good = parse_generated_reports(result)
+    record = baseline.build_baseline_record([good] * 3)
+    fixture = Path(__file__).parent / "fixtures/openroad/real-26Q2"
+    for name in ("6_finish.rpt", "6_unconstrained.rpt"):
+        shutil.copyfile(fixture / name, timing.parent / name)
+    for name in ("6_report.log", "6_report.json", "5_2_route.json"):
+        shutil.copyfile(fixture / name, area.parent / name)
+    measured = parse_generated_reports(result)
+    assert measured.valid
+    assert measured.wns_ns == -0.04544
+    assert measured.tns_ns == -0.737691
+    assert measured.area_um2 == 903.336
+    with pytest.raises(baseline.BaselineError, match="fixed area/timing"):
+        baseline.build_baseline_record([measured] * 3)
+    grade = grade_gcd_candidate(measured, baseline_record=record,
+                                evidence={"protected_hash": baseline.compute_protected_hash()})
+    assert grade.reward == 0
+    assert "timing-violation" in grade.reason_codes
+
+
+def test_rounded_text_cannot_hide_small_negative_slack(tmp_path):
+    result, _, area = report_result(tmp_path)
+    payload = json.loads((area.parent / "6_report.json").read_text())
+    payload["finish__timing__setup__ws"] = -0.00001
+    payload["finish__timing__setup__tns"] = -0.00001
+    (area.parent / "6_report.json").write_text(json.dumps(payload))
+    measured = parse_generated_reports(result)
+    assert measured.wns_ns < 0
+    with pytest.raises(baseline.BaselineError, match="fixed area/timing"):
+        baseline.build_baseline_record([measured] * 3)

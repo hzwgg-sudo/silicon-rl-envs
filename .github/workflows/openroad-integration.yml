@@ -95,5 +95,9 @@ jobs:
             /tmp/gcd-baseline-runs/**/reports/**
             /tmp/gcd-baseline-runs/**/resources.txt
             /tmp/gcd-baseline-runs/**/flow-result.json
+            /tmp/gcd-gate/**/agent-results.json
+            /tmp/gcd-gate/**/logs/**
+            /tmp/gcd-gate/**/reports/**
+            /tmp/gcd-gate/**/resources.txt
             /tmp/gcd-gate/**/trace.jsonl
             /tmp/gcd-gate/**/manifest.json

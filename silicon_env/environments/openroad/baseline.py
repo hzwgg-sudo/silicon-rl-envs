@@ -232,6 +232,21 @@ def metrics_to_record(metrics: Any) -> dict[str, Any]:
     }
 
 
+def _require_constraints(entry: Mapping[str, Any]) -> None:
+    for key in METRIC_KEYS:
+        value = entry.get(key)
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(value)):
+            raise BaselineError(f"non-finite or invalid baseline {key}")
+    if entry["area_um2"] <= 0 or entry["wns_ns"] < 0 or entry["tns_ns"] != 0:
+        raise BaselineError(f"baseline fails fixed area/timing constraints: {dict(entry)}")
+    for key in ("drc_count", "unconstrained_paths"):
+        if type(entry.get(key)) is not int or entry[key] != 0:
+            raise BaselineError(f"baseline requires measured clean {key}: {entry.get(key)!r}")
+    if entry.get("valid") is not True or entry.get("routed_ok") is not True:
+        raise BaselineError("baseline requires valid routed completion")
+
+
 def build_baseline_record(
     metrics_list: Any,
     *,
@@ -275,6 +290,8 @@ def build_baseline_record(
             problems.append("missing-completion")
         if problems:
             raise BaselineError(f"run {index} fails validity ({'; '.join(problems)}): fail closed")
+    for entry in normalized:
+        _require_constraints(entry)
     reference = normalized[0]
     for index in (1, 2):
         if not within_tolerances(normalized[index], reference, tols):
@@ -412,6 +429,7 @@ def validate_baseline(
         raise BaselineError(f"invalid baseline area {metrics['area_um2']!r}: must be > 0")
     if not metrics.get("valid") or not metrics.get("routed_ok"):
         raise BaselineError("invalid baseline metrics: must be valid with routed completion")
+    _require_constraints(metrics)
     _check_tolerances(record.get("tolerances", {}))
     provenance = record.get("provenance")
     if not isinstance(provenance, Mapping):
@@ -425,6 +443,10 @@ def validate_baseline(
     runs = record.get("runs")
     if not isinstance(runs, list) or len(runs) != REQUIRED_RUN_COUNT:
         raise BaselineError(f"baseline runs must list exactly {REQUIRED_RUN_COUNT} entries")
+    for run in runs:
+        if not isinstance(run, Mapping) or not isinstance(run.get("metrics"), Mapping):
+            raise BaselineError("baseline run must contain metrics")
+        _require_constraints(run["metrics"])
     return dict(record)
 
 

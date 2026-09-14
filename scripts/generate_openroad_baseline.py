@@ -30,6 +30,7 @@ import argparse
 import json
 import math
 import os
+import re
 import sys
 import tempfile
 import time
@@ -150,6 +151,7 @@ def make_flow_run_once(
         return GcdContainerRunner()
 
     factory = runner_factory or _default_runner
+    resource_samples = []
 
     def run_once(scratch_dir: Path, seed: int) -> Any:
         runner = factory()
@@ -163,8 +165,18 @@ def make_flow_run_once(
         )
         (scratch_dir / "flow-result.json").write_text(
             json.dumps(result.to_dict(), indent=2) + "\n")
+        resource_path = Path(result.provenance.get("output_dir", scratch_dir)) / "resources.txt"
+        peak = None
+        if resource_path.is_file():
+            match = re.search(r"Maximum resident set size \(kbytes\):\s*(\d+)",
+                              resource_path.read_text())
+            if match and int(match.group(1)) > 0:
+                peak = int(match.group(1)) / (1024**2)
+        resource_samples.append({"peak_rss_gb": peak,
+                                 "wallclock_s": result.provenance.get("duration_s")})
         return parse_generated_reports(result)
 
+    run_once.resource_samples = resource_samples
     return run_once
 
 
@@ -215,14 +227,17 @@ def generate_baseline(
                 ) from exc
             collected.append(metrics)
     wallclock_s = max(0.0, time.monotonic() - start)
-    peak_rss_gb = None  # host Docker-client RSS is not the EDA process peak
+    samples = getattr(run_once, "resource_samples", [])
+    peaks = [sample["peak_rss_gb"] for sample in samples if sample["peak_rss_gb"] is not None]
+    peak_rss_gb = max(peaks) if len(peaks) == 3 else None
     resources = {
         "wallclock_s": wallclock_s,
+        "runs": samples,
         "peak_rss_gb": peak_rss_gb,
         "status": "measured" if peak_rss_gb is not None else "measured-partial",
         "notes": (
             "total generator wallclock for the three stock runs; "
-            "EDA peak RSS is unmeasured: host Docker-client RSS is not container memory"
+            "peak RSS is GNU time max child RSS inside each container, not total cgroup memory"
         ),
     }
     record = gcd_baseline.build_baseline_record(

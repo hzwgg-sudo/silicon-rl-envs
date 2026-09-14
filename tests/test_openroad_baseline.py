@@ -24,8 +24,8 @@ GENERATOR_SCRIPT = (
 )
 
 AREA = 1234.5
-WNS = -0.023
-TNS = -0.145
+WNS = 0.0
+TNS = 0.0
 TOLS = {"area_rel": 0.01, "wns_abs_ns": 0.005, "tns_abs_ns": 0.01}
 
 

@@ -57,3 +57,18 @@ is not yet measured. The public task seed controls detailed routing only.
 - [Detailed routing and OR_SEED](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/036d106273e66855cd5214d49518fd0f0df7de61/flow/scripts/detail_route.tcl)
 - [GCD DRC metric key](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/036d106273e66855cd5214d49518fd0f0df7de61/flow/designs/nangate45/gcd/rules-base.json)
 - [OpenSTA check_setup return semantics](https://github.com/The-OpenROAD-Project/OpenSTA/blob/43177bba8f5f88dfb7dc35795242080a4fe2e986/search/Search.tcl)
+
+## Subsequent real qualification
+
+Run 34887304175 completed all three stock flows in restricted containers.
+They matched exactly at area 903.336 um², WNS −0.04544 ns, TNS −0.737691 ns,
+DRC 0 and unconstrained endpoints 0. The 0.46 ns task is timing-infeasible.
+Actual reports exposed `wns max` / `tns max` text formatting and precision
+loss from rounded reports. The parser now uses full-precision final JSON,
+and baseline validation rejects every run that fails fixed task constraints.
+Binary versions and measured RSS/runtime are recorded in the lockfile and
+[m1-stock-qualification.json](m1-stock-qualification.json).
+
+The pending benchmark clock decision prevents a verified baseline and merge;
+the stock failure is never reclassified as success. Earlier TBD statements
+about binary probes and stock-flow execution are superseded by this evidence.
