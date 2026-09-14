@@ -6,13 +6,15 @@
     "platform": "nangate45",
     "flow_entry": "flow/Makefile",
     "design_config": "flow/designs/nangate45/gcd/config.mk",
-    "sdc": "flow/designs/nangate45/gcd/constraint.sdc",
+    "sdc": "tasks/gcd/constraint.sdc",
     "rtl": [
       "flow/designs/src/gcd/gcd.v"
     ],
     "pdn_config": "flow/designs/nangate45/gcd/grid_strategy-M1-M4-M7.tcl",
-    "clock_period_ns": 0.46,
-    "notes": "Default ORFS tutorial design. Verified present at the pinned ORFS commit."
+    "clock_period_ns": 0.6,
+    "notes": "Default ORFS tutorial design. Verified present at the pinned ORFS commit.",
+    "upstream_sdc": "flow/designs/nangate45/gcd/constraint.sdc",
+    "task_sdc_sha256": "8ce61471681c0feaec1129bfd153ee6f7ebc1298e097a0f02c94b53eecdf9c04"
   },
   "orfs": {
     "repo": "https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts",
@@ -125,7 +127,9 @@
       "wallclock_s": 82.58494901657104,
       "peak_rss_gb": 0.7831459045410156,
       "machine": "GitHub ubuntu-24.04 Linux x86_64; restricted Docker: 1 CPU, 4 GiB cap",
-      "notes": "Three routed runs matched metrics exactly but fail the 0.46 ns timing task. RSS is GNU time max child RSS, not whole-cgroup memory. Run 34887304175."
+      "notes": "Three routed runs matched metrics exactly but fail the 0.46 ns timing task. RSS is GNU time max child RSS, not whole-cgroup memory. Run 34887304175.",
+      "task_version": "0.1.0",
+      "clock_period_ns": 0.46
     }
   },
   "execution": {
@@ -139,8 +143,8 @@
     }
   },
   "verification": {
-    "status": "real-flow-complete-timing-infeasible",
-    "blocked_reason": "Stock WNS -0.04544 ns and TNS -0.737691 ns violate the fixed 0.46 ns clock task. Release gate remains unqualified.",
+    "status": "pending-task-0.2.0-qualification",
+    "blocked_reason": "User approved a fixed 0.60 ns clock; task v0.2.0 awaits real qualification. Earlier measurements describe v0.1.0 only.",
     "checked_on": "2026-09-14",
     "checked_host": "GitHub ubuntu-24.04 x86_64",
     "run_url": "https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34887304175"

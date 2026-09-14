@@ -73,6 +73,9 @@ class GcdContainerRunner:
             evidence = base / "final_evidence.tcl"
             shutil.copyfile(hook, evidence)
             evidence.chmod(0o644)
+            constraints = base / "constraint.sdc"
+            shutil.copyfile(config.FIXED_SDC_PATH, constraints)
+            constraints.chmod(0o444)
             # Hosts running as root still launch a non-root container. These
             # disposable copies are the only writable mounts exposed to it.
             for directory, _, files in os.walk(source):
@@ -82,9 +85,10 @@ class GcdContainerRunner:
                     path.chmod(0o777 if path.stat().st_mode & 0o111 else 0o666)
             out.chmod(0o777)
             translated = [arg for arg in args if not arg.startswith(
-                ("WORK_HOME=", "POST_FINAL_REPORT_TCL="))]
+                ("WORK_HOME=", "POST_FINAL_REPORT_TCL=", "SDC_FILE="))]
             translated += [
                 "WORK_HOME=/outputs", "POST_FINAL_REPORT_TCL=/trusted/final_evidence.tcl",
+                "SDC_FILE=/trusted/constraint.sdc",
                 f"OPENROAD_EXE={TOOL_ROOT}/OpenROAD/bin/openroad",
                 f"YOSYS_EXE={TOOL_ROOT}/yosys/bin/yosys",
             ]
@@ -92,7 +96,8 @@ class GcdContainerRunner:
                 tool, translated, workdir="/flow", log_dir=log_dir,
                 mounts=[ContainerMount(source, "/flow", readonly=False),
                         ContainerMount(out, "/outputs", readonly=False),
-                        ContainerMount(evidence, "/trusted/final_evidence.tcl")],
+                        ContainerMount(evidence, "/trusted/final_evidence.tcl"),
+                        ContainerMount(constraints, "/trusted/constraint.sdc")],
                 env={**(env or {}), "HOME": "/tmp"}, timeout_s=timeout_s,
             )
             # Preserve timestamps and retain partial evidence on failure.

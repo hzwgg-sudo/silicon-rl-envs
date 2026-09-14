@@ -73,6 +73,7 @@ exec make -C "${ORFS_CHECKOUT}/flow" \
   "FLOW_VARIANT=${FLOW_VARIANT}" \
   "PLACE_DENSITY=${PLACE_DENSITY}" \
   "CORE_UTILIZATION=${CORE_UTILIZATION}" \
+  "SDC_FILE=${SCRIPT_DIR}/../tasks/gcd/constraint.sdc" \
   "WORK_HOME=${WORK_HOME}" \
   "POST_FINAL_REPORT_TCL=${SCRIPT_DIR}/final_evidence.tcl" \
   NUM_CORES=1 -j1 final

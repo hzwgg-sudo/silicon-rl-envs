@@ -3,7 +3,7 @@
 The task optimizes physical design only: RTL, SDC, libraries, and grading
 inputs are immutable. The agent may override exactly two numeric knobs --
 ``PLACE_DENSITY`` and ``CORE_UTILIZATION`` -- through the single editable
-file :data:`CANDIDATE_RELPATH`. Everything else (notably the fixed 0.46 ns
+file :data:`CANDIDATE_RELPATH`. Everything else (notably the fixed 0.60 ns
 clock and the RTL sources) is outside the allowed interface, so a candidate
 cannot relax timing constraints or alter function through it.
 
@@ -45,7 +45,7 @@ from silicon_env.types import (
 # --- task identity ---------------------------------------------------------
 
 GCD_TASK_ID = "gcd-nangate45"
-GCD_TASK_VERSION = "0.1.0"
+GCD_TASK_VERSION = "0.2.0"
 GCD_GRADER_ID = "gcd-area-grader"
 GCD_GRADER_VERSION = "0.1.0"
 
@@ -79,9 +79,10 @@ TOOLCHAIN_REFS = {
 
 FIXED_DESIGN = "gcd"
 FIXED_PLATFORM = "nangate45"
-FIXED_CLOCK_PERIOD_NS = 0.46
+FIXED_CLOCK_PERIOD_NS = 0.60
 FIXED_CLOCK_NAME = "core_clock"
-FIXED_SDC = "flow/designs/nangate45/gcd/constraint.sdc"
+FIXED_SDC = "tasks/gcd/constraint.sdc"
+FIXED_SDC_PATH = Path(__file__).parent / FIXED_SDC
 FIXED_DESIGN_CONFIG = "flow/designs/nangate45/gcd/config.mk"
 FIXED_RTL = ("flow/designs/src/gcd/gcd.v",)
 FIXED_CORNERS = "typical (NangateOpenCellLibrary_typical.lib)"
@@ -90,6 +91,7 @@ FIXED_LIB = "flow/platforms/nangate45/lib/NangateOpenCellLibrary_typical.lib"
 #: Protected (read-only) assets, recorded as groundwork for later tickets.
 #: None of these may appear in ``allowed_edit_paths``.
 PROTECTED_ASSETS = (
+    FIXED_SDC,
     "flow/designs/src/gcd/gcd.v",
     "flow/designs/nangate45/gcd/constraint.sdc",
     "flow/designs/nangate45/gcd/config.mk",

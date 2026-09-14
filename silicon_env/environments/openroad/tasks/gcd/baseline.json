@@ -2,7 +2,7 @@
   "schema_version": 1,
   "status": "TBD-unverified",
   "task_id": "gcd-nangate45",
-  "task_version": "0.1.0",
+  "task_version": "0.2.0",
   "orfs_commit": "036d106273e66855cd5214d49518fd0f0df7de61",
   "image_pinned_ref": "docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61",
   "candidate": {

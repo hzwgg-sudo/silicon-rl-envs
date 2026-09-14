@@ -317,7 +317,8 @@ def run_gcd_flow(
     output_dir.mkdir()
     evidence_script = Path(__file__).parent / "scripts" / "final_evidence.tcl"
     argv = [*base_args, *knob_args, f"WORK_HOME={output_dir}", "NUM_CORES=1",
-            f"POST_FINAL_REPORT_TCL={evidence_script}", f"OR_SEED={seed_value % (2**31)}",
+            f"POST_FINAL_REPORT_TCL={evidence_script}", f"SDC_FILE={gcd.FIXED_SDC_PATH}",
+            f"OR_SEED={seed_value % (2**31)}",
             "-j1", "final"]
     env: dict[str, str] = dict(plan["pinned_env"])
     if env_overrides:
@@ -394,6 +395,8 @@ def run_gcd_flow(
         "seed_passthrough_note": SEED_PASSTHROUGH_NOTE,
         "unsupported_nondeterminism_controls": list(UNSUPPORTED_NONDETERMINISM_CONTROLS),
         "candidate": dict(full),
+        "clock_period_ns": gcd.FIXED_CLOCK_PERIOD_NS,
+        "task_sdc_sha256": hashlib.sha256(gcd.FIXED_SDC_PATH.read_bytes()).hexdigest(),
         "candidate_sha256": candidate_hash,
         "candidate_path": str(scratch / CANDIDATE_FILENAME),
         "overrides_path": str(scratch / OVERRIDES_FILENAME),

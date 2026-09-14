@@ -36,4 +36,4 @@ target-version = "py310"
 select = ["E", "F", "I"]
 
 [tool.setuptools.package-data]
-"silicon_env.environments.openroad" = ["*.json", "scripts/*.sh", "scripts/*.tcl", "tasks/gcd/*.json", "tasks/gcd/*.md"]
+"silicon_env.environments.openroad" = ["*.json", "scripts/*.sh", "scripts/*.tcl", "tasks/gcd/*.json", "tasks/gcd/*.sdc", "tasks/gcd/*.md"]

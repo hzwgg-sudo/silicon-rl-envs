@@ -203,7 +203,10 @@ def test_restricted_runtime_mounts_only_disposable_copies(tmp_path):
             assert "WORK_HOME=/outputs" in args
             assert "POST_FINAL_REPORT_TCL=/trusted/final_evidence.tcl" in args
             mounts = {m.container_path: m for m in kwargs["mounts"]}
-            assert set(mounts) == {"/flow", "/outputs", "/trusted/final_evidence.tcl"}
+            assert set(mounts) == {"/flow", "/outputs", "/trusted/final_evidence.tcl",
+                                   "/trusted/constraint.sdc"}
+            assert mounts["/trusted/constraint.sdc"].readonly
+            assert "SDC_FILE=/trusted/constraint.sdc" in args
             assert mounts["/trusted/final_evidence.tcl"].readonly
             for mount in mounts.values():
                 mounted.append(Path(mount.host_path))

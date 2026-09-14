@@ -82,6 +82,7 @@ def fixed_design_facts() -> dict[str, Any]:
         "clock_period_ns": gcd.FIXED_CLOCK_PERIOD_NS,
         "clock_name": gcd.FIXED_CLOCK_NAME,
         "sdc": gcd.FIXED_SDC,
+        "sdc_sha256": hashlib.sha256(gcd.FIXED_SDC_PATH.read_bytes()).hexdigest(),
         "design_config": gcd.FIXED_DESIGN_CONFIG,
         "rtl": list(gcd.FIXED_RTL),
         "corners": gcd.FIXED_CORNERS,

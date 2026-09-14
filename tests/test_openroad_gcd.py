@@ -119,7 +119,7 @@ def test_clock_and_rtl_cannot_pass_through_surface():
         with pytest.raises(ContractError):
             gcd.validate_candidate_config(attempt)
     manifest = gcd.load_manifest_dict()
-    assert manifest["fixed_design"]["clock_period_ns"] == 0.46
+    assert manifest["fixed_design"]["clock_period_ns"] == 0.60
     assert manifest["fixed_design"]["rtl"] == ["flow/designs/src/gcd/gcd.v"]
 
 

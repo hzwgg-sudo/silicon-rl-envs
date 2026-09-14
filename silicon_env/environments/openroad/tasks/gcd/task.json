@@ -21,7 +21,7 @@
   },
   "fixed_design": {
     "clock_name": "core_clock",
-    "clock_period_ns": 0.46,
+    "clock_period_ns": 0.6,
     "corners": "typical (NangateOpenCellLibrary_typical.lib)",
     "design": "gcd",
     "design_config": "flow/designs/nangate45/gcd/config.mk",
@@ -35,10 +35,12 @@
     "rtl": [
       "flow/designs/src/gcd/gcd.v"
     ],
-    "sdc": "flow/designs/nangate45/gcd/constraint.sdc"
+    "sdc": "tasks/gcd/constraint.sdc",
+    "sdc_sha256": "8ce61471681c0feaec1129bfd153ee6f7ebc1298e097a0f02c94b53eecdf9c04"
   },
-  "notes": "M1-02 stock manifest. Only candidate.json is editable. Flow, metrics, and grader land in follow-on tickets; a real pinned-tool run is out of scope.",
+  "notes": "Task v0.2.0 fixes the clock at user-approved 0.60 ns after v0.1.0 stock failed at 0.46 ns. Candidate clock edits remain forbidden; zero-negative-slack grading is unchanged.",
   "protected_paths": [
+    "tasks/gcd/constraint.sdc",
     "flow/designs/src/gcd/gcd.v",
     "flow/designs/nangate45/gcd/constraint.sdc",
     "flow/designs/nangate45/gcd/config.mk",
@@ -76,7 +78,7 @@
     "seed": 0,
     "source_ref": "orfs:036d106273e66855cd5214d49518fd0f0df7de61:flow/designs/nangate45/gcd",
     "task_id": "gcd-nangate45",
-    "task_version": "0.1.0",
+    "task_version": "0.2.0",
     "toolchain_refs": {
       "orfs": "036d106273e66855cd5214d49518fd0f0df7de61",
       "orfs-image": "docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61"
