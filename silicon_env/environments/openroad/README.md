@@ -124,6 +124,44 @@ EDA/Docker/network/keys.
   lockfile `verification` section rather than fabricated.
 - `pytest`, `ruff`, `git diff --check`: see the ticket report.
 
+## Scripted GCD baselines (M1-09)
+
+Two deterministic scripted agents in `silicon_env/agents/` establish
+task usability and the do-nothing reference for the GCD task:
+
+- `baseline.py::run_noop_agent` — resets, optionally performs one
+  inspect `read_file` of the stock candidate, then submits without
+  edits. Declared cap `NOOP_MAX_ACTIONS = 2` (inspect + submit), zero
+  tool calls. Trusted score `0.5` when the baseline matches stock.
+- `openroad_search.py::run_search_agent` — evaluates a fixed-order
+  grid of at most four legal config pairs (stock `(0.30, 55.0)` plus
+  three variants spanning the supported bounds: mins, maxes, mid
+  density), one `write_file` + one `openroad-flow` run per candidate,
+  then writes back the winner and submits. Declared caps
+  `SEARCH_MAX_CANDIDATES = 4`, `SEARCH_MAX_TOOL_CALLS = 4`.
+  Winner selection is stable and deterministic: smallest observed area,
+  then lowest `PLACE_DENSITY`, then lowest `CORE_UTILIZATION`, then
+  earliest grid index. Same seed + same tool metrics always yields the
+  same action sequence and selection (no randomness). All-invalid grids
+  fall back to stock and report no improvement honestly; budget
+  exhaustion stops probing before exceeding the budget and submits the
+  best so far (or terminates honestly when the episode already ended).
+
+Both agents drive only the public observation/action interface and
+save through the existing environment trace/artifacts (no custom paths
+outside `work_root`). Tests in `tests/test_openroad_baselines.py`
+inject fake flow backends and need no EDA/Docker/network/keys.
+
+```bash
+.venv/bin/pytest -q tests/test_openroad_baselines.py
+```
+
+Real pinned runs of both agents are opt-in and skipped by default
+(`SILICON_RUN_OPENROAD_ENV=1` plus `ORFS_CHECKOUT` at the pinned
+commit on the Linux route); improvement over stock is recorded, not
+required. Blocked on the Mac dev host (arm64, container daemon
+stopped), which cannot run the linux/amd64 pinned image.
+
 ## Non-goals
 
 No Ibex, no alternate PDKs, no native macOS EDA support, no vendored PDK
