@@ -633,3 +633,20 @@ def test_identical_episodes_agree_on_raw_semantic_hash(tmp_path):
         finally:
             env.close()
     assert hashes[0] == hashes[1]
+
+
+def test_success_observation_excludes_variable_resource_logs(tmp_path, monkeypatch):
+    env = make_env(tmp_path)
+    try:
+        env.reset(gcd.make_gcd_task(seed=0))
+        monkeypatch.setattr(env, "_runner_log_tails", lambda _: (
+            "Elapsed time: 0:02.08[h:]min:sec. CPU time: user 1.94 sys 0.13\n"
+            "6_report 2 183 N/A\nPeak memory: 187472KB."
+        ))
+        run = env.step(act("run_tool", {"tool": gcd_flow.FLOW_TOOL_NAME}))
+        assert run.status == StepStatus.SUCCESS
+        assert "Elapsed time" not in run.observation.stdout_tail
+        assert "187472" not in run.observation.stdout_tail
+        assert "stage=final" in run.observation.stdout_tail
+    finally:
+        env.close()

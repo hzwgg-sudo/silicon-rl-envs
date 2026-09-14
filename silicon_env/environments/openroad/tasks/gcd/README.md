@@ -8,14 +8,15 @@ without changing function or timing constraints.
 - ORFS tag `26Q2`, commit `036d106273e66855cd5214d49518fd0f0df7de61`.
 - Image `docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61`.
 - Design config `flow/designs/nangate45/gcd/config.mk`.
-- SDC `flow/designs/nangate45/gcd/constraint.sdc`, clock `core_clock`
-  period **0.46 ns** (fixed; not settable).
+- Task v0.2.0 SDC `constraint.sdc`, clock `core_clock`, period **0.60 ns**
+  (fixed; not settable). This approved benchmark revision preserves upstream
+  input/output delay ratios and replaces the timing-infeasible 0.46 ns target.
 - RTL `flow/designs/src/gcd/gcd.v` (immutable).
 - Corners: typical (`NangateOpenCellLibrary_typical.lib`).
 - Endpoint: `final` (default `make` target through detailed route to final
   reports; executed in M1-03, defined here only).
 
-Full pin details live in `../toolchain.lock.json`.
+Full pin details live in `../../toolchain.lock.json`.
 
 ## Config surface (the only editable file)
 

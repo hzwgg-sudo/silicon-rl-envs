@@ -371,7 +371,10 @@ class GcdEnvironment(BaseEnvironment):
         message = str(getattr(flow_result, "message", "") or "")
         if message:
             lines.append(sanitize_tail(message, limit=1000))
-        tail = self._runner_log_tails(flow_result)
+        # Successful raw logs contain ORFS resource tables and clock text.
+        # Keep those diagnostic files, but expose stable parsed metrics below.
+        # Failed runs retain log tails so agents can diagnose tool errors.
+        tail = "" if report.get("ok") else self._runner_log_tails(flow_result)
         if tail:
             lines.append(tail)
         from silicon_env.environments.openroad.reports import parse_generated_reports
