@@ -79,6 +79,24 @@ failure (missing files, non-empty `--output-dir`, unsupported task ID,
 I/O errors). Bad paths and malformed actions print a concise `error:` line
 to stderr with a nonzero exit.
 
+## GCD deterministic quickstart + release gate (M1-10)
+
+`docs/gcd-quickstart.md` is the reproducible reset-to-grade flow for the
+pinned `gcd-nangate45` task: provision the Linux route (ORFS @
+`036d1062...`, digest-pinned image), preflight, scripted
+`run_task` episode, independent regrade, verified baseline generation,
+and the opt-in release gate. No manual file edits are needed.
+
+Release-gate status: the real pinned-tool run is **blocked on the Mac
+dev host** (arm64/8 GB RAM, container daemon stopped, image is
+linux/amd64 only), so measured RAM/runtime stays `TBD-unverified`
+(never fabricated). The sanctioned Linux route is the manual
+`openroad-integration` workflow (workflow_dispatch only, single worker,
+7-day compact artifact retention), i.e.
+`SILICON_RUN_GCD_E2E=1 pytest tests/integration/test_gcd_e2e.py`.
+The same gate logic runs with fakes in the default fast suite (no
+EDA/Docker/network): `pytest tests/test_gcd_release_gate.py`.
+
 ## Test
 
 ```bash

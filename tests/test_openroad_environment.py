@@ -581,3 +581,55 @@ def test_real_pinned_gcd_episode_opt_in(tmp_path):
             )
     finally:
         env.close()
+
+
+# --- determinism: no clock-derived text in agent observations ------------------
+
+CLOCK_TEXT_RE = (
+    r"\b(wallclock_s|duration_s|elapsed_s|remaining_wallclock_s)="
+)
+
+
+def test_run_observation_carries_no_clock_derived_text(tmp_path):
+    """Agent-visible tails must not embed clock floats.
+
+    ``wallclock_s``/``duration_s`` are diagnostic-only (trace snapshots and
+    flow provenance retain them). Embedding them in observation text would
+    make otherwise-identical episodes hash differently, so the release
+    gate compares raw semantic hashes.
+    """
+    import re
+
+    env = make_env(tmp_path)
+    try:
+        env.reset(gcd.make_gcd_task(seed=0))
+        run = env.step(act("run_tool", {"tool": gcd_flow.FLOW_TOOL_NAME}))
+        assert run.status == StepStatus.SUCCESS
+        tails = (run.observation.stdout_tail or "") + "\n" + (
+            run.observation.stderr_tail or ""
+        )
+        assert not re.search(CLOCK_TEXT_RE, tails), tails
+    finally:
+        env.close()
+
+
+def test_identical_episodes_agree_on_raw_semantic_hash(tmp_path):
+    """Two identical scripted episodes share one raw semantic trace hash."""
+    from silicon_env import trace as trace_mod
+
+    hashes = []
+    for i in range(2):
+        env = make_env(tmp_path / f"ep{i}")
+        try:
+            env.reset(gcd.make_gcd_task(seed=0))
+            env.step(act("run_tool", {"tool": gcd_flow.FLOW_TOOL_NAME}))
+            if not env.done:
+                env.submit()
+            run_dir = env.run_dir
+            assert run_dir is not None
+            events = trace_mod.read_events(Path(run_dir) / "trace.jsonl")
+            trace_mod.verify_run(run_dir)
+            hashes.append(trace_mod.semantic_hash_for(events))
+        finally:
+            env.close()
+    assert hashes[0] == hashes[1]

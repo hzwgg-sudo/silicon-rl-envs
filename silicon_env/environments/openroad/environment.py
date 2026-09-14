@@ -354,11 +354,14 @@ class GcdEnvironment(BaseEnvironment):
             report = gcd_flow.summarize(flow_result)
         except Exception:
             return f"flow status={getattr(flow_result, 'status', '?')}"
+        # NOTE: duration_s is deliberately excluded from the agent-visible
+        # summary. It is clock-derived (diagnostic-only) and would make
+        # otherwise-identical episodes hash differently; it remains
+        # available in flow provenance and runner logs.
         lines = [
             f"flow status={report.get('status')} stage={report.get('stage_reached')} "
             f"ok={report.get('ok')} endpoint={report.get('endpoint')}",
-            f"candidate={report.get('candidate_sha256')} "
-            f"duration_s={report.get('duration_s')}",
+            f"candidate={report.get('candidate_sha256')}",
         ]
         missing = report.get("missing_artifacts") or []
         stale = report.get("stale_artifacts") or []
@@ -389,6 +392,10 @@ class GcdEnvironment(BaseEnvironment):
         return "\n".join(parts)
 
     def _budget_text(self) -> str:
+        # NOTE: remaining wallclock is deliberately excluded here. It is
+        # clock-derived (diagnostic-only; still recorded in trace budget
+        # snapshots) and would make otherwise-identical episodes hash
+        # differently. Steps + tool calls are deterministic counters.
         assert self._tracker is not None
         try:
             snapshot = self._tracker.snapshot()
@@ -396,8 +403,7 @@ class GcdEnvironment(BaseEnvironment):
             return "budget: unknown"
         return (
             f"remaining steps={snapshot.get('remaining_steps')} "
-            f"tool_calls={snapshot.get('remaining_tool_calls')} "
-            f"wallclock_s={snapshot.get('remaining_wallclock_s')}"
+            f"tool_calls={snapshot.get('remaining_tool_calls')}"
         )
 
     # -- independent submit -----------------------------------------------
