@@ -133,8 +133,9 @@ def _load_baseline_record() -> dict:
     packaged = bl.validate_baseline(bl.load_baseline(gcd.TASK_DIR / "baseline.json"))
     if BASELINE_OVERRIDE:
         regenerated = bl.validate_baseline(bl.load_baseline(BASELINE_OVERRIDE))
-        assert bl.within_tolerances(regenerated["metrics"], packaged["metrics"],
-                                    packaged["tolerances"]), "baseline changed from packaged capture"
+        assert bl.within_tolerances(
+            regenerated["metrics"], packaged["metrics"], packaged["tolerances"]
+        ), "baseline changed from packaged capture"
         return regenerated
     return packaged
 
