@@ -1,0 +1,15 @@
+# SYNTHETIC fixture mirroring pinned schema orfs-26Q2-final-v1.
+# NOT a measured real-tool report. Real-report capture is pending a real
+# pinned-image run on the Linux route (blocked on the Mac dev host).
+# Intermediate (placement) timing report: must never substitute for final
+# routed timing metrics (wrong-stage -> invalid).
+schema: orfs-26Q2-final-v1
+stage: place
+report: place_timing
+corner: typical
+units: ns
+wns: 0.010 ns
+tns: 0.000 ns
+unconstrained_paths: 0
+routed_completion: false
+source: reports/nangate45/gcd/default/place/report_checks.rpt (declared; pending Linux verification)

@@ -1,0 +1,10 @@
+# SYNTHETIC fixture mirroring pinned schema orfs-26Q2-final-v1.
+# NOT a measured real-tool report. Real-report capture is pending a real
+# pinned-image run on the Linux route (blocked on the Mac dev host).
+# Successful final design-area report.
+schema: orfs-26Q2-final-v1
+stage: final
+report: final_area
+units: um^2
+Design area 1234.5 u^2
+source: reports/nangate45/gcd/default/final/report_design_area.rpt (declared; pending Linux verification)

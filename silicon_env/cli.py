@@ -1,14 +1,16 @@
-"""Local task execution and grading commands (M0-08).
+"""Local task execution and grading commands (M0-08, M1-08).
 
-Toy-only CLI over :class:`ToyEnvironment`:
+Toy + GCD CLI over :class:`ToyEnvironment` / :class:`GcdEnvironment`:
 
 - ``run-task`` reads a task JSON file (:class:`TaskSpec` dict) plus an
   actions JSON file (list of ``{action_type, params}``), runs one
-  :class:`ToyEnvironment` episode into ``--output-dir``, and writes
+  environment episode into ``--output-dir``, and writes
   ``summary.json`` + ``trace.jsonl`` + ``manifest.json`` plus a saved
   candidate file for later regrading.
-- ``grade-task`` regrades a saved submission dir with the pure
-  :func:`grade_candidate` grader (no environment, no tools).
+- ``grade-task`` regrades a saved submission dir: the pure
+  :func:`grade_candidate` grader for toy (no environment, no tools);
+  the independent clean-room evaluator for GCD (needs ``ORFS_CHECKOUT``
+  on the Linux route; without it regrading fails as infrastructure).
 
 Exit codes (documented in ``--help`` and the README):
 
@@ -24,6 +26,7 @@ Stdlib-only, Python >= 3.10. No network, no EDA tools, no interactivity.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sys
 import traceback
@@ -35,7 +38,7 @@ EXIT_PASS = 0
 EXIT_FAIL = 2
 EXIT_INFRA = 3
 
-SUPPORTED_TASK_IDS = ("toy-text-edit",)
+SUPPORTED_TASK_IDS = ("toy-text-edit", "gcd-nangate45")
 
 TASK_FILENAME = "task.json"
 ACTIONS_FILENAME = "actions.json"
@@ -43,6 +46,7 @@ SUMMARY_FILENAME = "summary.json"
 TRACE_FILENAME = "trace.jsonl"
 MANIFEST_FILENAME = "manifest.json"
 SUBMISSION_REL = "submission/note.txt"
+GCD_SUBMISSION_REL = "submission/candidate.json"
 GRADE_FILENAME = "grade.json"
 
 
@@ -75,7 +79,7 @@ def _parse_json(text: str, *, what: str) -> Any:
 
 
 def load_task_spec(task_path: Path):
-    """Load and validate a TaskSpec dict; toy task ids only."""
+    """Load and validate a TaskSpec dict; toy + GCD task ids only."""
     from silicon_env.task import TaskSpec
     from silicon_env.types import ContractError
 
@@ -89,7 +93,7 @@ def load_task_spec(task_path: Path):
         raise CliInvalidError(f"task file {task_path} is invalid: {exc}") from exc
     if spec.task_id not in SUPPORTED_TASK_IDS:
         raise CliInfraError(
-            f"unsupported task_id {spec.task_id!r}: this CLI is toy-only "
+            f"unsupported task_id {spec.task_id!r} "
             f"(supported: {sorted(SUPPORTED_TASK_IDS)})"
         )
     return spec
@@ -232,7 +236,7 @@ def _grade_from_candidate(
     )
 
 
-def run_episode(
+def _run_toy_episode(
     *,
     task,
     seed: int,
@@ -372,6 +376,231 @@ def run_episode(
     return summary
 
 
+def _load_gcd_baseline_record() -> dict[str, Any]:
+    """Load the packaged GCD baseline record (may be TBD-unverified).
+
+    A missing file yields ``{}`` so grading fails closed as
+    ``baseline-invalid``; a corrupt packaged file is infrastructure.
+    """
+    from silicon_env.environments.openroad import config as gcd_config
+
+    path = Path(os.environ.get("SILICON_GCD_BASELINE") or gcd_config.TASK_DIR / "baseline.json")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    from silicon_env.types import ContractError, loads_strict
+
+    try:
+        payload = loads_strict(text)
+    except ContractError as exc:
+        raise CliInfraError(f"packaged GCD baseline {path} is invalid: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise CliInfraError(f"packaged GCD baseline {path} must decode to an object")
+    return payload
+
+
+def _make_gcd_environment(work_root: Path):
+    """Build a real-backend GCD environment for CLI episodes."""
+    from silicon_env.environments.openroad.environment import GcdEnvironment, default_flow_runner
+
+    runner = default_flow_runner()
+    return GcdEnvironment(
+        work_root=work_root,
+        runner=runner,
+        orfs_checkout=os.environ.get("ORFS_CHECKOUT", ""),
+        baseline_record=_load_gcd_baseline_record(),
+        enable_trace=True,
+    )
+
+
+def _gcd_terminal_grade(*, task, seed: int, status, message: str):
+    """Build a no-reward GCD GradeResult for a terminal mid-episode outcome."""
+    from silicon_env.grader import GradeResult
+    from silicon_env.types import Provenance
+
+    return GradeResult(
+        schema_version=1,
+        task_id=task.task_id,
+        task_version=task.task_version,
+        status=status,
+        score=0.0,
+        passed=False,
+        metrics=(),
+        provenance=Provenance(
+            task_id=task.task_id,
+            task_version=task.task_version,
+            seed=seed,
+            toolchain_refs=dict(task.toolchain_refs),
+            grader_id=task.grader.grader_id,
+            grader_version=task.grader.grader_version,
+        ),
+        message=message,
+    )
+
+
+def _run_gcd_episode(
+    *,
+    task,
+    seed: int,
+    action_dicts: Sequence[Mapping[str, Any]],
+    output_dir: Path,
+) -> dict[str, Any]:
+    """Run one GCD episode; write machine-readable outputs; return summary.
+
+    Mirrors the toy episode loop over :class:`GcdEnvironment`: explicit
+    actions drive reset/inspect/edit/run, an unconsumed episode is
+    submitted, and a ``submit`` action's exact grade is recalled from
+    the environment (no re-grading).
+    """
+    from silicon_env.environments.openroad import config as gcd_config
+    from silicon_env.grader import GradeResult
+    from silicon_env.task import Action
+    from silicon_env.types import GradeStatus, StepStatus, dumps_strict
+
+    work_root = output_dir / "_work"
+    try:
+        work_root.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise CliInfraError(f"cannot create work dir {work_root}: {exc}") from exc
+
+    env = _make_gcd_environment(work_root)
+    grade: GradeResult | None = None
+    last_status: StepStatus | None = None
+    last_message = ""
+    steps = 0
+    submitted_message = ""
+    try:
+        env.reset(task, seed)
+        for raw in action_dicts:
+            if env.done:
+                break
+            action = Action(
+                schema_version=int(raw["schema_version"]),
+                action_type=str(raw["action_type"]),
+                params=dict(raw["params"]),
+                step_index=int(raw["step_index"]),
+            )
+            result = env.step(action)
+            steps = result.step_index
+            last_status = result.status
+            last_message = result.message
+            if result.done and result.status in (StepStatus.TIMEOUT, StepStatus.INFRA_ERROR):
+                from silicon_env.types import GradeStatus as _GS
+
+                status = _GS.TIMEOUT if result.status == StepStatus.TIMEOUT else _GS.INFRA_ERROR
+                grade = _gcd_terminal_grade(
+                    task=task,
+                    seed=seed,
+                    status=status,
+                    message=result.message or result.status.value,
+                )
+                break
+        if grade is None and not env.done:
+            grade = env.submit()
+            steps = env.budget_tracker.steps_used
+            submitted_message = grade.message
+        if grade is None:
+            # Done via a submit action: recall the exact evaluator grade.
+            recovered = env.last_submit_grade
+            if recovered is not None:
+                grade = recovered
+            else:  # pragma: no cover - defensive; submit always records
+                raise CliInfraError("episode ended without a recorded submit grade")
+        assert grade is not None
+        try:
+            candidate_text: str | None = env.workspace.read_text(  # type: ignore[union-attr]
+                gcd_config.CANDIDATE_RELPATH
+            )
+            candidate_error = ""
+        except Exception as exc:
+            candidate_text, candidate_error = None, str(exc)
+    finally:
+        try:
+            env.close()
+        except Exception:
+            pass
+
+    # -- persist outputs -------------------------------------------------
+    try:
+        run_dir = env.run_dir
+        if run_dir is None or not Path(run_dir).is_dir():
+            raise CliInfraError("episode produced no trace run dir")
+        src_trace = Path(run_dir) / TRACE_FILENAME
+        src_manifest = Path(run_dir) / MANIFEST_FILENAME
+        if not src_trace.is_file() or not src_manifest.is_file():
+            raise CliInfraError("episode trace files are missing")
+        shutil.copyfile(src_trace, output_dir / TRACE_FILENAME)
+        shutil.copyfile(src_manifest, output_dir / MANIFEST_FILENAME)
+        if (Path(run_dir) / "artifacts").is_dir():
+            shutil.copytree(Path(run_dir) / "artifacts", output_dir / "artifacts")
+        (output_dir / TASK_FILENAME).write_text(
+            dumps_strict(task.to_dict()) + "\n", encoding="utf-8"
+        )
+        (output_dir / ACTIONS_FILENAME).write_text(
+            dumps_strict(list(action_dicts)) + "\n", encoding="utf-8"
+        )
+        submission_path = output_dir / GCD_SUBMISSION_REL
+        submission_path.parent.mkdir(parents=True, exist_ok=True)
+        if candidate_text is not None:
+            submission_path.write_text(candidate_text, encoding="utf-8")
+        budget_snapshot: dict[str, Any] = {}
+        try:
+            tracker = env.budget_tracker
+            if tracker is not None:
+                budget_snapshot = tracker.snapshot()
+        except Exception:
+            budget_snapshot = {}
+        summary = {
+            "schema_version": 1,
+            "task_id": task.task_id,
+            "task_version": task.task_version,
+            "seed": seed,
+            "passed": bool(grade.passed),
+            "status": grade.status.value,
+            "score": float(grade.score),
+            "steps": int(steps),
+            "message": submitted_message or grade.message or last_message,
+            "last_step_status": last_status.value if last_status is not None else "",
+            "candidate_error": candidate_error,
+            "files": {
+                "task": TASK_FILENAME,
+                "actions": ACTIONS_FILENAME,
+                "trace": TRACE_FILENAME,
+                "manifest": MANIFEST_FILENAME,
+                "submission": GCD_SUBMISSION_REL if candidate_text is not None else "",
+            },
+            "budget": budget_snapshot,
+        }
+        if grade.status == GradeStatus.PASS and not grade.passed:  # pragma: no cover
+            raise CliInfraError("internal grading inconsistency")
+        (output_dir / SUMMARY_FILENAME).write_text(dumps_strict(summary) + "\n", encoding="utf-8")
+    except CliInfraError:
+        raise
+    except OSError as exc:
+        raise CliInfraError(f"cannot write outputs into {output_dir}: {exc}") from exc
+    return summary
+
+
+def run_episode(
+    *,
+    task,
+    seed: int,
+    action_dicts: Sequence[Mapping[str, Any]],
+    output_dir: Path,
+) -> dict[str, Any]:
+    """Run one episode for a supported task id; return the summary dict."""
+    from silicon_env.environments.openroad import config as gcd_config
+
+    if task.task_id == gcd_config.GCD_TASK_ID:
+        return _run_gcd_episode(
+            task=task, seed=seed, action_dicts=action_dicts, output_dir=output_dir
+        )
+    return _run_toy_episode(
+        task=task, seed=seed, action_dicts=action_dicts, output_dir=output_dir
+    )
+
+
 def cmd_run_task(args: argparse.Namespace) -> int:
     task = load_task_spec(Path(args.task))
     task = apply_seed_override(task, args.seed)
@@ -401,6 +630,10 @@ def cmd_grade_task(args: argparse.Namespace) -> int:
             "grade the output dir produced by run-task"
         )
     task = load_task_spec(task_path)
+    from silicon_env.environments.openroad import config as gcd_config
+
+    if task.task_id == gcd_config.GCD_TASK_ID:
+        return cmd_grade_gcd_task(args, task=task, submission_dir=submission_dir)
     candidate_path = submission_dir / SUBMISSION_REL
     if not candidate_path.is_file():
         raise CliInfraError(
@@ -424,6 +657,110 @@ def cmd_grade_task(args: argparse.Namespace) -> int:
     return EXIT_PASS if grade.passed else EXIT_FAIL
 
 
+def cmd_grade_gcd_task(args: argparse.Namespace, *, task, submission_dir: Path) -> int:
+    """Regrade a saved GCD run-task output dir via the independent evaluator.
+
+    The candidate is first validated purely (malformed config → invalid
+    submission, exit 2). A valid candidate is re-run through the trusted
+    evaluator, which needs ``ORFS_CHECKOUT`` at the pinned commit on the
+    Linux route; without it regrading fails as infrastructure (exit 3).
+    """
+    import tempfile
+
+    from silicon_env.environments.openroad import config as gcd_config
+    from silicon_env.environments.openroad import evaluator as gcd_evaluator
+    from silicon_env.grader import GradeResult
+    from silicon_env.types import (
+        ContractError,
+        GradeStatus,
+        Provenance,
+        dumps_strict,
+        loads_dict_strict,
+    )
+
+    candidate_path = submission_dir / GCD_SUBMISSION_REL
+    if not candidate_path.is_file():
+        raise CliInfraError(
+            f"submission candidate {candidate_path} is missing; expected the run-task output dir"
+        )
+    try:
+        candidate_text = candidate_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise CliInfraError(f"cannot read candidate {candidate_path}: {exc}") from exc
+
+    def _invalid_grade(message: str) -> GradeResult:
+        return GradeResult(
+            schema_version=1,
+            task_id=task.task_id,
+            task_version=task.task_version,
+            status=GradeStatus.INVALID_SUBMISSION,
+            score=0.0,
+            passed=False,
+            metrics=(),
+            provenance=Provenance(
+                task_id=task.task_id,
+                task_version=task.task_version,
+                seed=task.seed,
+                toolchain_refs=dict(task.toolchain_refs),
+                grader_id=task.grader.grader_id,
+                grader_version=task.grader.grader_version,
+            ),
+            message=message,
+        )
+
+    try:
+        payload = loads_dict_strict(candidate_text, what="candidate config")
+        gcd_config.validate_candidate_config(payload)
+    except ContractError as exc:
+        grade = _invalid_grade(f"invalid candidate config: {exc}")
+    else:
+        checkout = os.environ.get("ORFS_CHECKOUT", "").strip()
+        if not checkout:
+            raise CliInfraError(
+                "GCD regrade needs ORFS_CHECKOUT at the pinned commit "
+                "(Linux route); without trusted sources no score can be recomputed"
+            )
+        from silicon_env.environments.openroad.environment import default_flow_runner
+
+        runner = default_flow_runner()
+        try:
+            with tempfile.TemporaryDirectory(prefix="gcd-regrade-") as tmp:
+                staging = Path(tmp) / "submission"
+                staging.mkdir(parents=False, exist_ok=False)
+                (staging / gcd_config.CANDIDATE_RELPATH).write_text(
+                    candidate_text, encoding="utf-8"
+                )
+                eval_result = gcd_evaluator.evaluate_submission(
+                    staging,
+                    orfs_checkout=checkout,
+                    eval_root=Path(tmp) / "eval_root",
+                    runner=runner,
+                    baseline_record=_load_gcd_baseline_record(),
+                    seed=task.seed,
+                    timeout_s=float(task.grader.timeout_s),
+                )
+                grade = gcd_evaluator.to_grade_result(
+                    eval_result, baseline_record=_load_gcd_baseline_record()
+                )
+        except gcd_evaluator.EvaluatorError as exc:
+            raise CliInfraError(f"GCD evaluator misuse: {exc}") from exc
+        except (OSError, ValueError) as exc:
+            raise CliInfraError(f"GCD regrade failed: {exc}") from exc
+    output_path = Path(args.output) if args.output else (submission_dir / GRADE_FILENAME)
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(dumps_strict(grade.to_dict()) + "\n", encoding="utf-8")
+    except OSError as exc:
+        raise CliInfraError(f"cannot write grade file {output_path}: {exc}") from exc
+    print(
+        f"status={grade.status.value} passed={str(bool(grade.passed)).lower()} "
+        f"score={float(grade.score)} submission={submission_dir}"
+    )
+    if grade.status == GradeStatus.INFRA_ERROR:
+        return EXIT_INFRA
+    return EXIT_PASS if grade.passed else EXIT_FAIL
+
+
 EXIT_HELP = (
     "exit codes: 0 pass, 2 invalid submission or grading failure, 3 infrastructure or usage failure"
 )
@@ -440,8 +777,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     run_p = sub.add_parser(
         "run-task",
-        help="run a toy task with an explicit actions file",
-        description=f"Run one toy episode into --output-dir. {EXIT_HELP}.",
+        help="run a toy or GCD task with an explicit actions file",
+        description=f"Run one toy/GCD episode into --output-dir. {EXIT_HELP}.",
     )
     run_p.add_argument("--task", required=True, help="path to task JSON file (TaskSpec dict)")
     run_p.add_argument(
@@ -453,7 +790,10 @@ def build_parser() -> argparse.ArgumentParser:
     grade_p = sub.add_parser(
         "grade-task",
         help="regrade a saved run-task submission dir",
-        description=f"Regrade a run-task output dir with the pure toy grader. {EXIT_HELP}.",
+        description=(
+            "Regrade a run-task output dir (pure toy grader; "
+            f"independent evaluator for GCD). {EXIT_HELP}."
+        ),
     )
     grade_p.add_argument("--submission-dir", required=True, help="run-task output dir")
     grade_p.add_argument(
@@ -466,7 +806,7 @@ def build_parser() -> argparse.ArgumentParser:
 def build_run_parser() -> argparse.ArgumentParser:
     parser = _ArgumentParser(
         prog="silicon-run-task",
-        description=f"Run one toy episode into --output-dir. {EXIT_HELP}.",
+        description=f"Run one toy/GCD episode into --output-dir. {EXIT_HELP}.",
     )
     parser.add_argument("--task", required=True, help="path to task JSON file (TaskSpec dict)")
     parser.add_argument(
@@ -480,7 +820,10 @@ def build_run_parser() -> argparse.ArgumentParser:
 def build_grade_parser() -> argparse.ArgumentParser:
     parser = _ArgumentParser(
         prog="silicon-grade-task",
-        description=f"Regrade a run-task output dir with the pure toy grader. {EXIT_HELP}.",
+        description=(
+            "Regrade a run-task output dir (pure toy grader; "
+            f"independent evaluator for GCD). {EXIT_HELP}."
+        ),
     )
     parser.add_argument("--submission-dir", required=True, help="run-task output dir")
     parser.add_argument(
@@ -553,6 +896,7 @@ __all__ = [
     "EXIT_HELP",
     "EXIT_INFRA",
     "EXIT_PASS",
+    "GCD_SUBMISSION_REL",
     "GRADE_FILENAME",
     "SUBMISSION_REL",
     "SUPPORTED_TASK_IDS",
@@ -562,6 +906,7 @@ __all__ = [
     "build_grade_parser",
     "build_parser",
     "build_run_parser",
+    "cmd_grade_gcd_task",
     "cmd_grade_task",
     "cmd_run_task",
     "eprint",

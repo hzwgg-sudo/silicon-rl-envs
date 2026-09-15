@@ -191,4 +191,5 @@ def test_non_toy_task_id_rejected_with_clear_error(tmp_path):
         str(out),
     )
     assert proc.returncode == 3
-    assert "toy-only" in proc.stderr
+    assert "unsupported task_id" in proc.stderr
+    assert "gcd-nangate45" in proc.stderr

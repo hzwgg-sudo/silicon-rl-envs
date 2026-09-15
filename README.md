@@ -28,11 +28,13 @@ source .venv/bin/activate
 python -m pip install -e '.[dev]'  # runtime + pytest and ruff
 ```
 
-## Local task execution (toy-only, M0-08)
+## Local task execution (toy + GCD, M0-08/M1-08)
 
 Run a task with an explicit action script, then regrade the saved submission.
-Toy adapter only (`toy-text-edit`); other task IDs are rejected with a clear
-error. No agent loop, network, EDA tools, or UI.
+Toy (`toy-text-edit`) and GCD (`gcd-nangate45`) adapters; other task IDs are
+rejected with a clear error. No agent loop, network, EDA tools, or UI.
+GCD flow/submit needs `ORFS_CHECKOUT` at the pinned commit on the Linux
+route; without it GCD episodes fail closed as infrastructure.
 
 ```bash
 # 1. Write a task file and an explicit action script.
@@ -56,7 +58,8 @@ python scripts/run_task.py --task /tmp/toy-task.json \
     --actions /tmp/toy-actions.json --output-dir /tmp/toy-out
 echo "run exit: $?"
 
-# 3. Regrade the saved submission with the pure grader.
+# 3. Regrade the saved submission with the pure grader (toy) or the
+#    independent evaluator (GCD, needs ORFS_CHECKOUT).
 python scripts/grade_task.py --submission-dir /tmp/toy-out
 echo "grade exit: $?"
 cat /tmp/toy-out/summary.json
@@ -75,6 +78,24 @@ Exit codes: `0` pass, `2` invalid submission or grading failure
 failure (missing files, non-empty `--output-dir`, unsupported task ID,
 I/O errors). Bad paths and malformed actions print a concise `error:` line
 to stderr with a nonzero exit.
+
+## GCD deterministic quickstart + release gate (M1-10)
+
+`docs/gcd-quickstart.md` is the reproducible reset-to-grade flow for the
+pinned `gcd-nangate45` task: provision the Linux route (ORFS @
+`036d1062...`, digest-pinned image), preflight, scripted
+`run_task` episode, independent regrade, verified baseline generation,
+and the opt-in release gate. No manual file edits are needed.
+
+Release-gate status: the real pinned-tool run is **blocked on the Mac
+dev host** (arm64/8 GB RAM, container daemon stopped, image is
+linux/amd64 only), so measured RAM/runtime stays `TBD-unverified`
+(never fabricated). The sanctioned Linux route is the manual
+`openroad-integration` workflow (workflow_dispatch only, single worker,
+7-day compact artifact retention), i.e.
+`SILICON_RUN_GCD_E2E=1 pytest tests/integration/test_gcd_e2e.py`.
+The same gate logic runs with fakes in the default fast suite (no
+EDA/Docker/network): `pytest tests/test_gcd_release_gate.py`.
 
 ## Test
 

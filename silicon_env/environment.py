@@ -131,6 +131,7 @@ class BaseEnvironment(ABC):
         self._run_dir: Path | None = None
         self._trace_finalized: bool = True
         self._pending_submit_grade = None  # GradeResult | None
+        self._last_submit_grade = None  # GradeResult | None (persists for recall)
 
     # -- state views ----------------------------------------------------
 
@@ -170,6 +171,17 @@ class BaseEnvironment(ABC):
     @property
     def trace_recorder(self):  # TraceRecorder | None
         return self._recorder
+
+    @property
+    def last_submit_grade(self):  # GradeResult | None
+        """Grade from the most recent submit (step action or submit call).
+
+        Persists after termination so callers driving ``step`` with an
+        explicit ``submit`` action can recall the exact grade without
+        re-grading. ``None`` when no submit has happened this episode;
+        cleared on ``reset``.
+        """
+        return self._last_submit_grade
 
     @property
     def trace_path(self) -> Path | None:
@@ -261,6 +273,7 @@ class BaseEnvironment(ABC):
         self._done = False
         self._has_reset = True
         self._pending_submit_grade = None
+        self._last_submit_grade = None
 
         text = self._initial_text()
         return Observation(
@@ -325,6 +338,7 @@ class BaseEnvironment(ABC):
         result = self._grade()
         result.validate()
         self._done = True
+        self._last_submit_grade = result
         return result
 
     # -- trace hooks ----------------------------------------------------
@@ -572,6 +586,7 @@ class BaseEnvironment(ABC):
         grade.validate()
         self._done = True
         self._pending_submit_grade = grade
+        self._last_submit_grade = grade
         passed = grade.status == GradeStatus.PASS
         obs = self._obs(
             action,
