@@ -71,7 +71,7 @@
       "grader_id": "gcd-area-grader",
       "grader_version": "0.1.0",
       "required_metrics": [],
-      "timeout_s": 60.0
+      "timeout_s": 3600.0
     },
     "read_only": false,
     "schema_version": 1,

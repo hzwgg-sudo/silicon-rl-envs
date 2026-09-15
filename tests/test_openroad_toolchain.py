@@ -89,14 +89,15 @@ def test_lockfile_has_no_mutable_scored_refs():
     assert "@sha256:" in lock["image"]["pinned_ref"]
 
 
-def test_lockfile_records_measured_versions_and_timing_failure_honestly():
+def test_lockfile_records_measured_versions_and_resources():
     lock = load_lock()
     for name in ("openroad", "yosys"):
         entry = lock["tools"][name]["version"]
         assert entry["status"] == "verified"
         assert entry["value"]
     ref = lock["resources"]["reference_run"]
-    assert ref["status"] == "measured-flow-complete-timing-infeasible"
+    assert ref["status"] == "measured"
+    assert ref["task_version"] == "0.2.0"
     assert ref["wallclock_s"] > 0 and ref["peak_rss_gb"] > 0
 
 

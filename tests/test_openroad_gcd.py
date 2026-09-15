@@ -229,3 +229,10 @@ def test_to_task_spec_respects_seed_and_budgets():
     assert spec.seed == 7
     assert spec.budgets.max_steps == 5
     assert spec.budgets.max_tool_calls == 4
+
+
+def test_default_grader_budget_supports_real_flow():
+    task = gcd.make_gcd_task()
+    assert task.grader.timeout_s == 3600.0
+    assert gcd.load_task_spec().grader.timeout_s == task.grader.timeout_s
+    assert gcd.make_gcd_task(max_wallclock_s=20).grader.timeout_s == 20

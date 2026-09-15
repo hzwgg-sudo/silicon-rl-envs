@@ -123,13 +123,13 @@
       "memory_gb": 4.0
     },
     "reference_run": {
-      "status": "measured-flow-complete-timing-infeasible",
-      "wallclock_s": 82.58494901657104,
-      "peak_rss_gb": 0.7831459045410156,
+      "status": "measured",
+      "wallclock_s": 101.77062225341797,
+      "peak_rss_gb": 0.7810249328613281,
       "machine": "GitHub ubuntu-24.04 Linux x86_64; restricted Docker: 1 CPU, 4 GiB cap",
-      "notes": "Three routed runs matched metrics exactly but fail the 0.46 ns timing task. RSS is GNU time max child RSS, not whole-cgroup memory. Run 34887304175.",
-      "task_version": "0.1.0",
-      "clock_period_ns": 0.46
+      "notes": "Three stock runs passed and matched exactly. RSS is GNU time max child RSS, not whole-cgroup memory. Run 34910380801.",
+      "task_version": "0.2.0",
+      "clock_period_ns": 0.6
     }
   },
   "execution": {
@@ -143,11 +143,11 @@
     }
   },
   "verification": {
-    "status": "pending-task-0.2.0-qualification",
-    "blocked_reason": "User approved a fixed 0.60 ns clock; task v0.2.0 awaits real qualification. Earlier measurements describe v0.1.0 only.",
+    "status": "stock-and-five-gates-verified-final-gate-rerun-pending",
+    "blocked_reason": "Only the tamper test string assertion failed by matching evaluator version 0.1.0; corrected assertion awaits rerun.",
     "checked_on": "2026-09-14",
     "checked_host": "GitHub ubuntu-24.04 x86_64",
-    "run_url": "https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34887304175"
+    "run_url": "https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34910380801"
   },
   "licenses": {
     "orfs": "BSD-3-Clause (upstream)",

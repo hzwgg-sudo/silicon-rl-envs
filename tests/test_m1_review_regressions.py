@@ -306,3 +306,17 @@ def test_rounded_text_cannot_hide_small_negative_slack(tmp_path):
     assert measured.wns_ns < 0
     with pytest.raises(baseline.BaselineError, match="fixed area/timing"):
         baseline.build_baseline_record([measured] * 3)
+
+
+def test_constraint_content_change_invalidates_baseline(tmp_path, monkeypatch):
+    record = baseline.build_baseline_record([
+        metrics.GcdMetrics(stage="final", schema="orfs-26Q2-final-v1", area_um2=100,
+                           wns_ns=0, tns_ns=0, routed_ok=True, drc_count=0,
+                           unconstrained_paths=0, valid=True)
+        for _ in range(3)
+    ])
+    altered = tmp_path / "constraint.sdc"
+    altered.write_text(config.FIXED_SDC_PATH.read_text().replace("0.60", "0.61"))
+    monkeypatch.setattr(config, "FIXED_SDC_PATH", altered)
+    with pytest.raises(baseline.BaselineError, match="protected_hash"):
+        baseline.validate_baseline(record)

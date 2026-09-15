@@ -130,9 +130,13 @@ def _require_checkout() -> Path:
 
 
 def _load_baseline_record() -> dict:
+    packaged = bl.validate_baseline(bl.load_baseline(gcd.TASK_DIR / "baseline.json"))
     if BASELINE_OVERRIDE:
-        return bl.load_baseline(BASELINE_OVERRIDE)
-    return bl.load_baseline(gcd.TASK_DIR / "baseline.json")
+        regenerated = bl.validate_baseline(bl.load_baseline(BASELINE_OVERRIDE))
+        assert bl.within_tolerances(regenerated["metrics"], packaged["metrics"],
+                                    packaged["tolerances"]), "baseline changed from packaged capture"
+        return regenerated
+    return packaged
 
 
 def _real_task(seed: int, **overrides):
@@ -381,7 +385,12 @@ def test_forged_reports_cannot_move_trusted_grade(tmp_path):
     second = _evaluate(clean)
     assert first.reward == second.reward
     assert first.reason_codes == second.reason_codes
-    assert str(forged_area) not in json.dumps(first.to_dict())
+    assert first.ok and second.ok
+    assert first.metrics is not None and second.metrics is not None
+    assert first.metrics.area_um2 != forged_area
+    assert first.metrics.area_um2 == second.metrics.area_um2
+    assert bl.within_tolerances(first.metrics, baseline_record["metrics"],
+                                baseline_record["tolerances"])
 
     dirty = tmp_path / "dirty-sub"
     dirty.mkdir()

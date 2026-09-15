@@ -290,7 +290,7 @@ def test_non_metrics_candidate_fails_closed():
 
 def test_tbd_placeholder_baseline_fails_scoring_use():
     payload = bl.load_baseline(TASK_BASELINE)
-    assert payload["status"] == "TBD-unverified"
+    payload["status"] = "TBD-unverified"
     candidate = make_metrics()
     evidence = {"protected_hash": "TBD-unverified"}
     result = gcd_grader.grade_gcd_candidate(

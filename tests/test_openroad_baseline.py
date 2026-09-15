@@ -3,7 +3,7 @@
 Lightweight by design: no EDA tools, Docker, network, or API keys.
 All runs are fake :class:`GcdMetrics` (or a fake ``run_once``
 callable); the only real files are the packaged ``baseline.json``
-placeholder (asserted TBD-unverified, never scored) and
+record (validated against its measured provenance) and
 ``toolchain.lock.json`` pins via ``config``.
 """
 
@@ -205,19 +205,18 @@ def test_invalid_tolerances_rejected():
 # --- TBD placeholder fails closed --------------------------------------------
 
 
-def test_checked_baseline_is_honest_tbd_placeholder():
-    assert TASK_BASELINE.is_file()
-    payload = json.loads(TASK_BASELINE.read_text(encoding="utf-8"))
-    assert payload["status"] == "TBD-unverified"
-    assert payload["metrics"]["area_um2"] is None
-    assert payload["metrics"]["wns_ns"] is None
-    assert payload["metrics"]["tns_ns"] is None
-    assert payload["candidate_hash"] == "TBD-unverified"
-    assert "blocked" in json.dumps(payload).lower() or "TBD" in json.dumps(payload)
+def test_checked_baseline_is_verified_real_capture():
+    payload = bl.validate_baseline(bl.load_baseline(TASK_BASELINE))
+    assert payload["status"] == "verified"
+    assert payload["metrics"]["area_um2"] == 679.63
+    assert payload["provenance"]["seeds"] == [7, 8, 9]
+    assert payload["provenance"]["run_url"].startswith("https://github.com/")
+    assert payload["resources"]["status"] == "measured"
 
 
 def test_tbd_baseline_fails_scoring_use():
     payload = bl.load_baseline(TASK_BASELINE)
+    payload["status"] = "TBD-unverified"
     with pytest.raises(bl.BaselineError, match="not usable for scoring"):
         bl.validate_baseline(payload)
 

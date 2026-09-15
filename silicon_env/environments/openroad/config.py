@@ -243,8 +243,8 @@ def make_gcd_task(
     """Build the canonical GCD :class:`TaskSpec`.
 
     Only :data:`CANDIDATE_RELPATH` is editable; RTL, SDC, libraries, and
-    grading inputs stay immutable. Grading/flow wiring is a placeholder
-    for the M1-03 flow ticket (no metrics claimed here).
+    grading inputs stay immutable. The grader deadline accommodates real
+    physical design execution while respecting the task wall-clock budget.
     """
     task = TaskSpec(
         schema_version=1,
@@ -264,7 +264,7 @@ def make_gcd_task(
         grader=GraderConfig(
             grader_id=GCD_GRADER_ID,
             grader_version=GCD_GRADER_VERSION,
-            timeout_s=min(60.0, float(max_wallclock_s)),
+            timeout_s=min(7200.0, float(max_wallclock_s)),
         ),
     )
     task.validate()

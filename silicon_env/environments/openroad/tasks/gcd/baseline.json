@@ -1,48 +1,112 @@
 {
+  "candidate": {
+    "CORE_UTILIZATION": 55.0,
+    "PLACE_DENSITY": 0.3
+  },
+  "candidate_hash": "49feb01fd633b5800a0e609e9625e3cacb5ef9eb3522d37ce73d8acc01be2221",
+  "image_pinned_ref": "docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61",
+  "metrics": {
+    "area_um2": 679.63,
+    "drc_count": 0,
+    "routed_ok": true,
+    "tns_ns": 0.0,
+    "unconstrained_paths": 0,
+    "valid": true,
+    "wns_ns": 0.0
+  },
+  "orfs_commit": "036d106273e66855cd5214d49518fd0f0df7de61",
+  "protected_hash": "1e462763a83e6d5b8a4d2956b20338206b77f134fe56c15c9f667d41baf0e634",
+  "provenance": {
+    "generator": "scripts/generate_openroad_baseline.py",
+    "run_ids": [
+      "stock-gcd-0",
+      "stock-gcd-1",
+      "stock-gcd-2"
+    ],
+    "seeds": [
+      7,
+      8,
+      9
+    ],
+    "tool_versions": {
+      "make": "GNU Make 4.3",
+      "openroad": "26Q1-2938-g0e2d771c5e",
+      "yosys": "Yosys 0.63+post (git sha1 UNKNOWN-dirty, g++ 11.4.0-1ubuntu1~22.04.3 -fPIC -O3)"
+    },
+    "run_url": "https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34910380801",
+    "source_commit": "26d79a1",
+    "artifact_id": 10375586141,
+    "measured_on": "2026-09-14"
+  },
+  "resources": {
+    "notes": "total generator wallclock for the three stock runs; peak RSS is GNU time max child RSS inside each container, not total cgroup memory",
+    "peak_rss_gb": 0.7810249328613281,
+    "runs": [
+      {
+        "peak_rss_gb": 0.7810249328613281,
+        "wallclock_s": 101.77062225341797
+      },
+      {
+        "peak_rss_gb": 0.7801589965820312,
+        "wallclock_s": 102.00892376899719
+      },
+      {
+        "peak_rss_gb": 0.7805747985839844,
+        "wallclock_s": 102.26098585128784
+      }
+    ],
+    "status": "measured",
+    "wallclock_s": 306.092746859
+  },
+  "runs": [
+    {
+      "metrics": {
+        "area_um2": 679.63,
+        "drc_count": 0,
+        "routed_ok": true,
+        "tns_ns": 0.0,
+        "unconstrained_paths": 0,
+        "valid": true,
+        "wns_ns": 0.0
+      },
+      "run_id": "stock-gcd-0",
+      "seed": 7
+    },
+    {
+      "metrics": {
+        "area_um2": 679.63,
+        "drc_count": 0,
+        "routed_ok": true,
+        "tns_ns": 0.0,
+        "unconstrained_paths": 0,
+        "valid": true,
+        "wns_ns": 0.0
+      },
+      "run_id": "stock-gcd-1",
+      "seed": 8
+    },
+    {
+      "metrics": {
+        "area_um2": 679.63,
+        "drc_count": 0,
+        "routed_ok": true,
+        "tns_ns": 0.0,
+        "unconstrained_paths": 0,
+        "valid": true,
+        "wns_ns": 0.0
+      },
+      "run_id": "stock-gcd-2",
+      "seed": 9
+    }
+  ],
   "schema_version": 1,
-  "status": "TBD-unverified",
+  "status": "verified",
   "task_id": "gcd-nangate45",
   "task_version": "0.2.0",
-  "orfs_commit": "036d106273e66855cd5214d49518fd0f0df7de61",
-  "image_pinned_ref": "docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61",
-  "candidate": {
-    "PLACE_DENSITY": 0.3,
-    "CORE_UTILIZATION": 55.0
-  },
-  "candidate_hash": "TBD-unverified",
-  "protected_hash": "TBD-unverified",
-  "metrics": {
-    "area_um2": null,
-    "wns_ns": null,
-    "tns_ns": null,
-    "routed_ok": false,
-    "drc_count": null,
-    "unconstrained_paths": null,
-    "valid": false
-  },
   "tolerances": {
     "area_rel": 0.01,
-    "wns_abs_ns": 0.005,
-    "tns_abs_ns": 0.01
+    "tns_abs_ns": 0.01,
+    "wns_abs_ns": 0.005
   },
-  "tolerances_note": "PROVISIONAL pending real three-run measurement on the Linux route (see scripts/generate_openroad_baseline.py). Tight initial values; justify empirically from observed run-to-run spread, never loosen to make a drifted run pass.",
-  "provenance": {
-    "run_ids": [],
-    "seeds": [],
-    "tool_versions": null,
-    "generator": "scripts/generate_openroad_baseline.py",
-    "note": "No real three-run capture has been measured. This placeholder is NOT usable for scoring: validate_baseline rejects it (fail closed). Real runs are blocked on the Mac dev host (no EDA/Linux/Docker daemon); capture them on the Linux route with the reproduction command below."
-  },
-  "runs": [],
-  "resources": {
-    "wallclock_s": null,
-    "peak_rss_gb": null,
-    "status": "TBD-unverified",
-    "notes": "Measured resource usage is recorded here by the generator during a real three-run capture; no values are claimed until then."
-  },
-  "generation": {
-    "procedure": "Run the stock GCD candidate three times in fresh scratch workspaces under the identical pinned profile, verify all runs valid and within tolerances, then write this file atomically.",
-    "reproduction_command": "python scripts/generate_openroad_baseline.py --orfs-checkout /path/to/orfs --output silicon_env/environments/openroad/tasks/gcd/baseline.json --seed 0 --timeout-s 7200",
-    "blocked_reason": "Dev host is Mac arm64/8GB with the container daemon stopped; the pinned image is linux/amd64 only, so no EDA run was attempted here. No metric values are fabricated in this record."
-  }
+  "tolerances_note": "Seeds 7, 8 and 9 matched exactly (area/WNS/TNS spread zero). Original acceptance bounds retained unchanged: 1% area, 0.005 ns WNS, 0.01 ns TNS. These are maximum drift limits, not claims of observed variation; correctness still requires WNS >= 0 and TNS = 0 for every run."
 }
