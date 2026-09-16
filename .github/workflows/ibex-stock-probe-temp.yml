@@ -97,7 +97,7 @@ jobs:
             -v /tmp/ibex-stock/outputs:/outputs:rw \
             -w /flow \
             "$ORFS_IMAGE" \
-            /usr/bin/time -v -o /outputs/resources-time.txt make DESIGN_CONFIG=./designs/nangate45/ibex/config.mk WORK_HOME=/outputs 2>&1 | tee /tmp/ibex-stock/flow-console.log
+            /usr/bin/time -v -o /outputs/resources-time.txt make DESIGN_CONFIG=./designs/nangate45/ibex/config.mk WORK_HOME=/outputs OPENROAD_EXE=/OpenROAD-flow-scripts/tools/install/OpenROAD/bin/openroad YOSYS_EXE=/OpenROAD-flow-scripts/tools/install/yosys/bin/yosys 2>&1 | tee /tmp/ibex-stock/flow-console.log
           END=$(date +%s)
           echo "wallclock_s=$((END-START))" | tee /tmp/ibex-stock/resources.txt
           echo "flow exit: ${PIPESTATUS[0]}"
