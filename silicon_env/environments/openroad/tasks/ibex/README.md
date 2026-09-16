@@ -96,6 +96,19 @@ ibex.load_task_spec()                  # TaskSpec from tasks/ibex/task.json
 
 ## Resource / preflight requirements (estimate; measurement in M2-02)
 
+- Preliminary stock measurement (M2-01, Linux x86_64, pinned image+commit,
+  `make DESIGN_CONFIG=./designs/nangate45/ibex/config.mk`,
+  `WORK_HOME` fresh, `NUM_CORES=1`, `OR_SEED=0`, 4-CPU/16 GiB host):
+  [run 35054041797](https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/35054041797)
+  reached the `final` endpoint with exit 0 in **1591 s wallclock**,
+  DRC **0**, design area **30029 um²** (stdcell), but setup
+  **WNS −0.0159 ns / TNS −0.0315 ns** (4 violations, fmax 451.3 MHz):
+  the initial 2.20 ns spec is ~16 ps too tight for a zero-slack baseline.
+  This is a calibration input to M2-02 clock selection (new task version),
+  not a flow incompatibility; the `reference_run.status` stays
+  `TBD-unverified` until M2-02's three-run qualification (which also
+  records peak RSS — the GNU-time file missed upload in this probe).
+  Artifacts: `ibex-stock-probe` (7-day retention).
 - No Ibex stock run has been executed yet: `reference_run.status` is
   `TBD-unverified` and no `baseline.json` is created here (M2-02 scores it).
   The 7200 s wall-clock budget is an estimate for a full RISC-V core flow,
