@@ -28,11 +28,13 @@ source .venv/bin/activate
 python -m pip install -e '.[dev]'  # runtime + pytest and ruff
 ```
 
-## Local task execution (toy-only, M0-08)
+## Local task execution (toy + GCD, M0-08/M1-08)
 
 Run a task with an explicit action script, then regrade the saved submission.
-Toy adapter only (`toy-text-edit`); other task IDs are rejected with a clear
-error. No agent loop, network, EDA tools, or UI.
+Toy (`toy-text-edit`) and GCD (`gcd-nangate45`) adapters; other task IDs are
+rejected with a clear error. No agent loop, network, EDA tools, or UI.
+GCD flow/submit needs `ORFS_CHECKOUT` at the pinned commit on the Linux
+route; without it GCD episodes fail closed as infrastructure.
 
 ```bash
 # 1. Write a task file and an explicit action script.
@@ -56,7 +58,8 @@ python scripts/run_task.py --task /tmp/toy-task.json \
     --actions /tmp/toy-actions.json --output-dir /tmp/toy-out
 echo "run exit: $?"
 
-# 3. Regrade the saved submission with the pure grader.
+# 3. Regrade the saved submission with the pure grader (toy) or the
+#    independent evaluator (GCD, needs ORFS_CHECKOUT).
 python scripts/grade_task.py --submission-dir /tmp/toy-out
 echo "grade exit: $?"
 cat /tmp/toy-out/summary.json
@@ -75,6 +78,33 @@ Exit codes: `0` pass, `2` invalid submission or grading failure
 failure (missing files, non-empty `--output-dir`, unsupported task ID,
 I/O errors). Bad paths and malformed actions print a concise `error:` line
 to stderr with a nonzero exit.
+
+## GCD deterministic quickstart + release gate (M1-10)
+
+`docs/gcd-quickstart.md` is the reproducible reset-to-grade flow for the
+pinned `gcd-nangate45` task: provision the Linux route (ORFS @
+`036d1062...`, digest-pinned image), preflight, scripted
+`run_task` episode, independent regrade, verified baseline generation,
+and the opt-in release gate. No manual file edits are needed.
+
+Task **v0.2.0**, with its approved fixed **0.60 ns** clock, passed
+[all six real Linux gate tests](https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34924691666). Stock seeds 7/8/9 matched exactly:
+area **679.63 um²**, WNS/TNS **0 ns**, DRC **0**, unconstrained endpoints **0**.
+Stock flow times were 101.77, 102.01 and 102.26 seconds; maximum GNU-time
+child RSS was 0.781 GiB under the 1 CPU/4 GiB container profile. This RSS
+measurement is not whole-cgroup memory.
+
+Three identical episodes shared one semantic trace hash and reward 0.5.
+Both scripted agents scored 0.5; bounded search used four probes and reported
+no improvement. The gate also passed forged-report rejection, budget
+exhaustion, legal/invalid edits, CLI execution and independent CLI regrading.
+The packaged baseline contains the measured three-run capture and tool versions.
+
+Reproduce via the manual `openroad-integration` workflow or the quickstart.
+Compact Actions artifacts are retained for seven days; key measurements and
+trace hashes are also archived in the repository.
+The same gate logic runs with fakes in the default fast suite (no
+EDA/Docker/network): `pytest tests/test_gcd_release_gate.py`.
 
 ## Test
 

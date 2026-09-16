@@ -1,0 +1,88 @@
+{
+  "config_surface": {
+    "bounds_note": "Bounds are task-supported safe ranges inside the ORFS semantic ranges (density 0-1, utilization 0-100 percent), recorded as supported by the pin. Only JSON numbers are accepted; strings (including Tcl/Make fragments) are rejected.",
+    "candidate_file": "candidate.json",
+    "knobs": {
+      "CORE_UTILIZATION": {
+        "max": 90.0,
+        "min": 20.0,
+        "source": "flow/designs/nangate45/gcd/config.mk: export CORE_UTILIZATION ?= 55 at pinned ORFS commit",
+        "stock": 55.0,
+        "unit": "percent"
+      },
+      "PLACE_DENSITY": {
+        "max": 0.8,
+        "min": 0.2,
+        "source": "flow/platforms/nangate45/config.mk: export PLACE_DENSITY ?= 0.30 at pinned ORFS commit",
+        "stock": 0.3,
+        "unit": "fraction"
+      }
+    }
+  },
+  "fixed_design": {
+    "clock_name": "core_clock",
+    "clock_period_ns": 0.6,
+    "corners": "typical (NangateOpenCellLibrary_typical.lib)",
+    "design": "gcd",
+    "design_config": "flow/designs/nangate45/gcd/config.mk",
+    "endpoint": "final",
+    "endpoint_note": "Default make target: full flow through detailed route ending at final reports. Executed in M1-03; this ticket defines the task only.",
+    "image_pinned_ref": "docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61",
+    "lib": "flow/platforms/nangate45/lib/NangateOpenCellLibrary_typical.lib",
+    "orfs_commit": "036d106273e66855cd5214d49518fd0f0df7de61",
+    "orfs_tag": "26Q2",
+    "platform": "nangate45",
+    "rtl": [
+      "flow/designs/src/gcd/gcd.v"
+    ],
+    "sdc": "tasks/gcd/constraint.sdc",
+    "sdc_sha256": "8ce61471681c0feaec1129bfd153ee6f7ebc1298e097a0f02c94b53eecdf9c04"
+  },
+  "notes": "Task v0.2.0 fixes the clock at user-approved 0.60 ns after v0.1.0 stock failed at 0.46 ns. Candidate clock edits remain forbidden; zero-negative-slack grading is unchanged.",
+  "protected_paths": [
+    "tasks/gcd/constraint.sdc",
+    "flow/designs/src/gcd/gcd.v",
+    "flow/designs/nangate45/gcd/constraint.sdc",
+    "flow/designs/nangate45/gcd/config.mk",
+    "flow/platforms/nangate45/config.mk",
+    "flow/platforms/nangate45/lef/NangateOpenCellLibrary.tech.lef",
+    "flow/platforms/nangate45/lib/NangateOpenCellLibrary_typical.lib",
+    "reports/",
+    "results/"
+  ],
+  "schema_version": 1,
+  "task": {
+    "allowed_actions": [
+      "read_file",
+      "write_file",
+      "run_tool",
+      "submit",
+      "noop"
+    ],
+    "allowed_edit_paths": [
+      "candidate.json"
+    ],
+    "budgets": {
+      "max_steps": 10,
+      "max_tool_calls": 10,
+      "max_wallclock_s": 3600.0
+    },
+    "grader": {
+      "grader_id": "gcd-area-grader",
+      "grader_version": "0.1.0",
+      "required_metrics": [],
+      "timeout_s": 3600.0
+    },
+    "read_only": false,
+    "schema_version": 1,
+    "seed": 0,
+    "source_ref": "orfs:036d106273e66855cd5214d49518fd0f0df7de61:flow/designs/nangate45/gcd",
+    "task_id": "gcd-nangate45",
+    "task_version": "0.2.0",
+    "toolchain_refs": {
+      "orfs": "036d106273e66855cd5214d49518fd0f0df7de61",
+      "orfs-image": "docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61"
+    }
+  },
+  "ticket": "M1-02"
+}

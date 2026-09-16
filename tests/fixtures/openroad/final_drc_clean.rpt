@@ -1,0 +1,9 @@
+# SYNTHETIC fixture mirroring pinned schema orfs-26Q2-final-v1.
+# NOT a measured real-tool report. Real-report capture is pending a real
+# pinned-image run on the Linux route (blocked on the Mac dev host).
+# Clean DRC report: zero violations.
+schema: orfs-26Q2-final-v1
+stage: final
+report: final_drc
+drc_violations: 0
+source: reports/nangate45/gcd/default/final/drc.rpt (declared; pending Linux verification)

@@ -1,0 +1,96 @@
+name: openroad-integration
+
+# Opt-in GCD deterministic release gate (M1-10). MANUAL ONLY: never runs on
+# push/PR, so the default CI stays lightweight (no EDA/Docker/network).
+# Trigger from the Actions tab (workflow_dispatch) on a provisioned Linux
+# worker. See docs/gcd-quickstart.md for the full reset-to-grade flow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Base seed (baseline runs use seed/seed+1/seed+2)"
+        required: false
+        default: "7"
+      flow_timeout_s:
+        description: "Per-run flow deadline in seconds"
+        required: false
+        default: "7200"
+
+# Single worker: one gate run at a time.
+concurrency:
+  group: openroad-integration
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  gcd-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      GATE_SEED: ${{ inputs.seed || '7' }}
+      GATE_TIMEOUT_S: ${{ inputs.flow_timeout_s || '7200' }}
+      ORFS_COMMIT: "036d106273e66855cd5214d49518fd0f0df7de61"
+      ORFS_REPO: "https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts"
+      ORFS_IMAGE: "docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package with dev extras
+        run: pip install -e .[dev]
+
+      - name: Check out pinned ORFS commit (shallow)
+        run: |
+          git init orfs
+          git -C orfs remote add origin "$ORFS_REPO"
+          git -C orfs fetch --depth 1 origin "$ORFS_COMMIT"
+          git -C orfs checkout "$ORFS_COMMIT"
+
+      - name: Pull pinned runtime (each flow launches a restricted container)
+        run: docker pull "$ORFS_IMAGE"
+
+      - name: Preflight gate
+        run: python scripts/check_openroad.py --orfs-checkout "$GITHUB_WORKSPACE/orfs"
+
+      - name: Generate verified baseline (stock x3, fail closed on drift)
+        run: |
+          python scripts/generate_openroad_baseline.py \
+            --orfs-checkout "$GITHUB_WORKSPACE/orfs" \
+            --output /tmp/gcd-baseline.json \
+            --work-parent /tmp/gcd-baseline-runs \
+            --seed "$GATE_SEED" \
+            --timeout-s "$GATE_TIMEOUT_S"
+
+      - name: Run deterministic GCD release gate (real pinned toolchain)
+        run: |
+          SILICON_RUN_GCD_E2E=1 \
+          ORFS_CHECKOUT="$GITHUB_WORKSPACE/orfs" \
+          SILICON_GCD_BASELINE=/tmp/gcd-baseline.json \
+          python -m pytest tests/integration/test_gcd_e2e.py -v \
+            --basetemp=/tmp/gcd-gate
+
+      - name: Upload compact gate artifacts (baseline + traces + manifests)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcd-gate-evidence
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            /tmp/gcd-baseline.json
+            /tmp/gcd-baseline-runs/**/logs/**
+            /tmp/gcd-baseline-runs/**/reports/**
+            /tmp/gcd-baseline-runs/**/resources.txt
+            /tmp/gcd-baseline-runs/**/flow-result.json
+            /tmp/gcd-gate/**/agent-results.json
+            /tmp/gcd-gate/**/logs/**
+            /tmp/gcd-gate/**/reports/**
+            /tmp/gcd-gate/**/resources.txt
+            /tmp/gcd-gate/**/trace.jsonl
+            /tmp/gcd-gate/**/manifest.json

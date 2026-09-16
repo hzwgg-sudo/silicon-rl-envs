@@ -1,0 +1,42 @@
+{
+  "status": "timing-infeasible",
+  "clock_period_ns": 0.46,
+  "run_url": "https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34887304175",
+  "commit": "57355e28e5996e51fba55d9a197ae8aa985aa915",
+  "tool_versions": {
+    "openroad": "26Q1-2938-g0e2d771c5e",
+    "yosys": "Yosys 0.63+post (git sha1 UNKNOWN-dirty, g++ 11.4.0-1ubuntu1~22.04.3 -fPIC -O3)"
+  },
+  "runs": [
+    {
+      "seed": 7,
+      "area_um2": 903.336,
+      "wns_ns": -0.04544,
+      "tns_ns": -0.737691,
+      "drc_count": 0,
+      "unconstrained_paths": 0,
+      "wallclock_s": 82.58494901657104,
+      "peak_rss_gb": 0.7823867797851562
+    },
+    {
+      "seed": 8,
+      "area_um2": 903.336,
+      "wns_ns": -0.04544,
+      "tns_ns": -0.737691,
+      "drc_count": 0,
+      "unconstrained_paths": 0,
+      "wallclock_s": 83.6701192855835,
+      "peak_rss_gb": 0.7819175720214844
+    },
+    {
+      "seed": 9,
+      "area_um2": 903.336,
+      "wns_ns": -0.04544,
+      "tns_ns": -0.737691,
+      "drc_count": 0,
+      "unconstrained_paths": 0,
+      "wallclock_s": 83.20687937736511,
+      "peak_rss_gb": 0.7831459045410156
+    }
+  ]
+}
