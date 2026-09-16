@@ -21,7 +21,7 @@
   },
   "fixed_design": {
     "clock_name": "core_clock",
-    "clock_period_ns": 2.2,
+    "clock_period_ns": 2.3,
     "clock_port": "clk_i",
     "corners": "typical (NangateOpenCellLibrary_typical.lib)",
     "design": "ibex",
@@ -59,14 +59,14 @@
     ],
     "rtl_note": "Mirrors VERILOG_FILES in flow/designs/nangate45/ibex/config.mk at the pinned commit: sort(wildcard $(DESIGN_HOME)/src/ibex_sv/*.sv) plus the synthesis shim $(DESIGN_HOME)/src/ibex_sv/syn/rtl/prim_clock_gating.v. The lowRISC prim vendor directory is a Verilog include dir (VERILOG_INCLUDE_DIRS), not a synthesised source; SYNTH_HDL_FRONTEND = slang.",
     "sdc": "tasks/ibex/constraint.sdc",
-    "sdc_sha256": "49f0897d4e9f61ccb1679b0814dc1604f8220c3fb175fa0fb1ccf5ac3d65b995",
+    "sdc_sha256": "10ad1493072c32bdad1c0a148f6eb38e0f33e1896ee265fe27537dc304a17892",
     "synth_hdl_frontend": "slang",
     "upstream_sdc": "flow/designs/nangate45/ibex/constraint.sdc",
     "verilog_include_dirs": [
       "flow/designs/src/ibex_sv/vendor/lowrisc_ip/prim/rtl/"
     ]
   },
-  "notes": "Task v0.1.0 initial Ibex spec (M2-01): fixed 2.20 ns upstream clock, stock CORE_UTILIZATION 50 per Ibex config.mk. Do not relax timing/correctness/tolerances without a new task version.",
+  "notes": "Task v0.2.0 fixes the clock at margined 2.30 ns after v0.1.0 stock violated setup by ~16 ps at the upstream 2.20 ns (measured run 35054041797: WNS -0.0159 ns / TNS -0.0315 ns, fmax 451.3 MHz i.e. 2.2158 ns min period). Mirrors the GCD v0.1.0->v0.2.0 precedent. Candidate clock edits remain forbidden; zero-negative-slack grading is unchanged.",
   "protected_paths": [
     "tasks/ibex/constraint.sdc",
     "flow/designs/nangate45/ibex/constraint.sdc",
@@ -128,10 +128,10 @@
     "flow/platforms/nangate45/lib/NangateOpenCellLibrary_typical.lib"
   ],
   "resources": {
-    "budget_note": "7200 s wall-clock budget is an estimate for a full RISC-V core flow, not a measurement. The stock Ibex flow has not been timed at this pin; M2-02 measures and records the reference run before any scoring.",
+    "budget_note": "7200 s wall-clock budget is an estimate for a full RISC-V core flow, informed but not confirmed by the v0.1.0 stock probe (1591 s wall at 2.20 ns, run 35054041797). M2-02's three-run qualification records peak RSS and confirms the budget at the v0.2.0 2.30 ns clock.",
     "reference_run": {
       "status": "TBD-unverified",
-      "notes": "No Ibex stock run has been executed yet (M2-01 defines the task only; no heavy EDA locally). GCD at the same pin measured ~102 s wall / ~0.78 GiB child-RSS on 1 CPU; Ibex is a far larger design, so expect substantially longer wallclock and higher peak RSS."
+      "notes": "v0.1.0 stock probe (run 35054041797, OR_SEED=0, NUM_CORES=1): final endpoint exit 0 in 1591 s wall, DRC 0, stdcell area 30029 um2, but setup WNS -0.0159 ns / TNS -0.0315 ns (4 violations) -- ~16 ps too tight for zero-slack scoring, which motivated the v0.2.0 2.30 ns clock. Peak RSS unrecorded (GNU-time file missed upload). Status stays TBD-unverified until M2-02's three-run v0.2.0 qualification (seeds 7/8/9) lands baseline.json."
     },
     "required_minimum": {
       "cpus": 2,
@@ -167,7 +167,7 @@
     "seed": 0,
     "source_ref": "orfs:036d106273e66855cd5214d49518fd0f0df7de61:flow/designs/nangate45/ibex",
     "task_id": "ibex-nangate45",
-    "task_version": "0.1.0",
+    "task_version": "0.2.0",
     "toolchain_refs": {
       "orfs": "036d106273e66855cd5214d49518fd0f0df7de61",
       "orfs-image": "docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61"

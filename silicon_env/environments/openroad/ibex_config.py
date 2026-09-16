@@ -1,20 +1,36 @@
-"""First Ibex area-under-timing task with a constrained edit surface (M2-01).
+"""Second Ibex area-under-timing task with a constrained edit surface (M2-01).
 
 The task optimizes physical design only: RTL, SDC, libraries, and grading
 inputs are immutable. The agent may override exactly two numeric knobs --
 ``PLACE_DENSITY`` and ``CORE_UTILIZATION`` -- through the single editable
-file :data:`CANDIDATE_RELPATH`. Everything else (notably the fixed 2.20 ns
+file :data:`CANDIDATE_RELPATH`. Everything else (notably the fixed 2.30 ns
 clock and the Ibex RTL sources) is outside the allowed interface, so a
 candidate cannot relax timing constraints or alter function through it.
+
+Task v0.2.0 (M2-02) re-times the fixed clock from the v0.1.0 upstream
+2.20 ns to a margined 2.30 ns: the measured v0.1.0 stock run (Linux,
+pinned image+commit, run 35054041797) reached the ``final`` endpoint with
+exit 0, DRC 0 and 30029 um^2 stdcell area but setup WNS -0.0159 ns / TNS
+-0.0315 ns (4 violations, fmax 451.3 MHz, i.e. a 2.2158 ns min period),
+so 2.20 ns is ~16 ps too tight for the zero-negative-slack grader.
+2.30 ns carries ~3.8% margin over 2.2158 ns (robust to detailed-route
+seed variation) while the grader bounds (WNS >= 0, TNS == 0) stay
+unchanged. This mirrors the GCD v0.1.0 -> v0.2.0 precedent (0.46 ns
+stock failure re-pinned at fixed 0.60 ns).
 
 This module mirrors ``config.py`` (GCD, M1-02) on purpose: the scope of
 #20 forbids a generic plugin framework and forbids ``if design == ...``
 branches in the generic core (``flow.py`` / ``evaluator.py`` /
 ``grader.py``), so the second task gets a narrow task-specific config with
 the same action space. Validation semantics are identical to GCD's; only
-the fixed-design facts and the ``CORE_UTILIZATION`` stock differ.
+the fixed-design facts and the ``CORE_UTILIZATION`` stock differ. The
+generic baseline/grader/report helpers accept this module as their
+``task`` argument (M2-02); they read only the shared attribute surface
+(``TASK_ID`` / ``TASK_VERSION`` / ``ENDPOINT`` plus the ``FIXED_*`` facts
+and candidate helpers also present on ``config.py``), so no
+ design-conditional logic is needed.
 
-Stock values are read off the pinned ORFS revision (see
+ Stock values are read off the pinned ORFS revision (see
 ``toolchain.lock.json`` -- the same pin GCD qualified, commit
 ``036d106273e66855cd5214d49518fd0f0df7de61``, image
 ``docker.io/openroad/orfs:26Q2@sha256:7832...47b61``):
@@ -56,9 +72,18 @@ from silicon_env.types import (
 # --- task identity ---------------------------------------------------------
 
 IBEX_TASK_ID = "ibex-nangate45"
-IBEX_TASK_VERSION = "0.1.0"
+IBEX_TASK_VERSION = "0.2.0"
 IBEX_GRADER_ID = "ibex-area-grader"
 IBEX_GRADER_VERSION = "0.1.0"
+
+#: Shared task-identity surface also present on ``config.py`` (GCD).
+#: The generic baseline/grader/report helpers read only these aliases
+#: (plus the ``FIXED_*`` facts and candidate helpers), so task-specific
+#: data flows through without design-conditional branches.
+TASK_ID = IBEX_TASK_ID
+TASK_VERSION = IBEX_TASK_VERSION
+GRADER_ID = IBEX_GRADER_ID
+GRADER_VERSION = IBEX_GRADER_VERSION
 
 #: The single editable file. The only entry of ``allowed_edit_paths``.
 #: A separate scratch filename from GCD's so the two tasks never share
@@ -69,6 +94,9 @@ CANDIDATE_RELPATH = "candidate_ibex.json"
 #: The default ``make`` target builds the full flow ending at final
 #: post-detailed-route reports.
 IBEX_ENDPOINT = "final"
+
+#: Shared endpoint alias (mirrors ``config.ENDPOINT`` for GCD).
+ENDPOINT = IBEX_ENDPOINT
 
 # --- pinned sources (same ORFS profile pin as GCD, M1-01) -------------------
 
@@ -93,7 +121,7 @@ TOOLCHAIN_REFS = {
 FIXED_DESIGN = "ibex"
 FIXED_DESIGN_NAME = "ibex_core"
 FIXED_PLATFORM = "nangate45"
-FIXED_CLOCK_PERIOD_NS = 2.20
+FIXED_CLOCK_PERIOD_NS = 2.30
 FIXED_CLOCK_NAME = "core_clock"
 FIXED_CLOCK_PORT = "clk_i"
 FIXED_SDC = "tasks/ibex/constraint.sdc"
@@ -307,9 +335,10 @@ def make_ibex_task(
     Only :data:`CANDIDATE_RELPATH` is editable; RTL, SDC, libraries, and
     grading inputs stay immutable. The default wall-clock budget is wider
     than GCD's 3600 s: Ibex is a full RISC-V core (~20x the GCD cell
-    count class) and the stock flow has not been timed yet at this pin
-    (measurement lands in M2-02); 7200 s is an estimate, not a measured
-    bound. The grader deadline matches the task wall-clock budget.
+    count class) and the v0.1.0 stock probe measured 1591 s wallclock
+    (run 35054041797); 7200 s remains an estimate until M2-02's
+    three-run qualification records peak RSS. The grader deadline
+    matches the task wall-clock budget.
     """
     task = TaskSpec(
         schema_version=1,
@@ -500,6 +529,7 @@ __all__ = [
     "CORE_UTILIZATION_MAX",
     "CORE_UTILIZATION_MIN",
     "CORE_UTILIZATION_STOCK",
+    "ENDPOINT",
     "FIXED_CLOCK_NAME",
     "FIXED_CLOCK_PERIOD_NS",
     "FIXED_CLOCK_PORT",
@@ -514,6 +544,8 @@ __all__ = [
     "FIXED_SYNTH_HDL_FRONTEND",
     "FIXED_UPSTREAM_SDC",
     "FIXED_VERILOG_INCLUDE_DIRS",
+    "GRADER_ID",
+    "GRADER_VERSION",
     "IBEX_ENDPOINT",
     "IBEX_GRADER_ID",
     "IBEX_GRADER_VERSION",
@@ -530,7 +562,9 @@ __all__ = [
     "REQUIRED_ASSETS",
     "SOURCE_REF",
     "TASK_DIR",
+    "TASK_ID",
     "TASK_MANIFEST_PATH",
+    "TASK_VERSION",
     "TOOLCHAIN_REFS",
     "candidate_with_defaults",
     "dumps_candidate_json",

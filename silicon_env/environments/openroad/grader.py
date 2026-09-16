@@ -1,4 +1,4 @@
-"""Correctness-gated GCD area scoring (M1-06).
+"""Correctness-gated area scoring (M1-06, extended M2-02).
 
 Pure grader over normalized final-stage metrics, immutable-input
 evidence, and an approved (verified) baseline. Area improvements count
@@ -6,6 +6,12 @@ only when the fixed design is preserved: final-route completion,
 required checks (DRC clean), no unconstrained paths, and fixed WNS/TNS
 bounds must all hold, and the protected/toolchain fingerprints must
 match the baseline record.
+
+The entry point defaults to the GCD task; pass ``task=<task config
+module>`` to grade another task's record with the identical formula and
+bounds. Task identity, fingerprints, and candidate bounds all come from
+that module's shared surface, so no design-conditional branches exist
+here and the reward formula is never duplicated.
 
 Scoring rule (explicit and bounded)::
 
@@ -199,11 +205,40 @@ def grade_gcd_candidate(
     :returns: a :class:`GcdGrade` with the bounded reward (``0.0`` when
         invalid), feasibility, raw area delta, and reason codes.
     """
+    return grade_candidate(
+        candidate_metrics, baseline_record=baseline_record, evidence=evidence
+    )
+
+
+def grade_candidate(
+    candidate_metrics: GcdMetrics,
+    *,
+    baseline_record: Mapping[str, Any],
+    evidence: Mapping[str, Any] | None = None,
+    task: Any | None = None,
+) -> GcdGrade:
+    """Grade one candidate against an approved baseline for one task.
+
+    Identical gates and reward formula to :func:`grade_gcd_candidate`;
+    the baseline record must validate under the ``task`` config module
+    (default: the GCD config). A record built for another task fails
+    with ``baseline-invalid`` (fail closed, reward ``0.0``).
+
+    :param candidate_metrics: normalized final-stage :class:`GcdMetrics`
+        (design-agnostic container despite the name).
+    :param baseline_record: approved baseline mapping for ``task``.
+    :param evidence: immutable-input evidence mapping (same contract as
+        :func:`grade_gcd_candidate`).
+    :param task: task-config module exposing the shared surface (same
+        requirement as :func:`baseline.validate_baseline`).
+    :returns: a :class:`GcdGrade` with the bounded reward (``0.0`` when
+        invalid), feasibility, raw area delta, and reason codes.
+    """
     reasons: list[str] = []
 
     # --- baseline trust gate -------------------------------------------------
     try:
-        record = bl.validate_baseline(baseline_record)
+        record = bl.validate_baseline(baseline_record, task=task)
     except (bl.BaselineError, ContractError) as exc:
         return _invalid(
             feasibility=False,
@@ -419,6 +454,7 @@ __all__ = [
     "GcdGrade",
     "area_reward",
     "clamp_rel_improvement",
+    "grade_candidate",
     "grade_gcd_candidate",
     "grade_infra_error",
     "summarize",

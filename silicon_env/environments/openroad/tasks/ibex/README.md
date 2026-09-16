@@ -1,9 +1,31 @@
-# Ibex nangate45 area-under-timing task (M2-01)
+# Ibex nangate45 area-under-timing task (M2-01/M2-02, v0.2.0)
 
 One task: optimize physical design for the pinned Ibex/nangate45 flow
 without changing function or timing constraints. GCD behavior, constraints,
 baseline identity, and reward formula are unchanged; this task reuses the
 same ORFS profile pin through a narrow task-specific config.
+
+## Task v0.2.0 clock (M2-02; mirrors the GCD v0.1.0 -> v0.2.0 precedent)
+
+v0.1.0 carried the upstream 2.20 ns period verbatim. The measured v0.1.0
+stock probe ([run 35054041797](https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/35054041797),
+Linux x86_64, pinned image+commit, `OR_SEED=0`, `NUM_CORES=1`) reached
+the `final` endpoint with exit 0 in 1591 s wallclock, DRC 0, stdcell
+area 30029 um² -- but setup **WNS −0.0159 ns / TNS −0.0315 ns**
+(4 violations, fmax 451.3 MHz, i.e. a 2.2158 ns min period). The 2.20 ns
+spec is ~16 ps too tight for the zero-negative-slack grader
+(WNS >= 0 / TNS == 0, unchanged -- the grader is NOT weakened).
+
+v0.2.0 therefore re-times the fixed clock to **2.30 ns**: ~3.8% margin
+over the measured 2.2158 ns min period, robust to detailed-route seed
+variation across the three qualification runs (seeds 7/8/9, mirroring
+the GCD gate). Only the period changes: the pinned task SDC keeps the
+upstream shape (design `ibex_core`, clock `core_clock` on port `clk_i`,
+IO ratio 0.2 via the same `expr $clk_period * $clk_io_pct`, hence
+0.46 ns IO delays). This mirrors the GCD precedent exactly (v0.1.0
+0.46 ns stock failure re-pinned at fixed 0.60 ns, grader untouched).
+`baseline.json` stays absent until the coordinator's three real v0.2.0
+reference runs land (fail closed until then).
 
 ## Upstream qualification (pinned commit, network inspection 2026-09-16)
 
@@ -38,10 +60,11 @@ Pinned ORFS commit `036d106273e66855cd5214d49518fd0f0df7de61` (tag `26Q2`)
   API at the pinned commit).
 - Image `docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61`.
 - Design config `flow/designs/nangate45/ibex/config.mk`.
-- Task v0.1.0 SDC `constraint.sdc` (pinned copy of the upstream Ibex SDC;
-  its own file because the clock -- 2.20 ns on `clk_i` -- differs from
-  GCD's 0.60 ns copy), clock `core_clock`, period **2.20 ns**
-  (fixed; not settable).
+- Task v0.2.0 SDC `constraint.sdc` (pinned copy of the upstream Ibex SDC
+  shape, re-timed to the margined 2.30 ns clock; its own file because
+  the clock -- 2.30 ns on `clk_i` -- differs from GCD's 0.60 ns copy),
+  clock `core_clock`, period **2.30 ns** (fixed; not settable;
+  v0.1.0 was 2.20 ns upstream, too tight by ~16 ps -- see above).
 - RTL: the 21 files listed in `task.json` (`fixed_design.rtl`), immutable.
 - Corners: typical (`NangateOpenCellLibrary_typical.lib`).
 - Endpoint: `final`, through detailed route and final reports.

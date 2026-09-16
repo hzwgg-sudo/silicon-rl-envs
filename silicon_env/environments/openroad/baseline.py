@@ -1,11 +1,20 @@
-"""Repeatable GCD reference baseline (M1-05).
+"""Repeatable task reference baseline (M1-05, extended M2-02).
 
-Captures one checked reference record for the pinned stock GCD task:
+Captures one checked reference record for a pinned stock task:
 input/tool fingerprints, final-stage metrics (area, WNS/TNS, routed
 completion, DRC/unconstrained indicators), validity evidence, declared
 comparison tolerances, three-run provenance, and measured resources.
 
-The reward denominator (follow-on ticket) must come from a reproducible
+The record defaults to the GCD stock task; every entry point accepts an
+optional ``task`` argument holding a narrow task-config module with the
+same shared surface (``TASK_ID`` / ``TASK_VERSION`` / ``ENDPOINT``, the
+``FIXED_*`` design facts, ``PROTECTED_ASSETS``, the pinned refs, and the
+candidate helpers). Passing a second task's config builds and validates
+that task's record with no duplicated formula and no design-conditional
+ branches: task identity, fingerprints, and scratch/output paths stay
+ separate per task.
+
+ The reward denominator (follow-on ticket) must come from a reproducible
 successful run; this module defines how that record is built, stored,
 and verified. Runtime/wallclock values and timestamps are provenance
 only: they never participate in deterministic equality (fingerprint
@@ -62,47 +71,103 @@ REQUIRED_RUN_COUNT = 3
 #: runtime/timestamps are explicitly excluded).
 METRIC_KEYS = ("area_um2", "wns_ns", "tns_ns")
 
+#: Shared task-config surface every ``task`` argument must expose
+#: (present on both the GCD config and the second task's narrow config).
+_TASK_ATTRS = (
+    "TASK_ID",
+    "TASK_VERSION",
+    "ENDPOINT",
+    "ORFS_COMMIT",
+    "IMAGE_PINNED_REF",
+    "FIXED_DESIGN",
+    "FIXED_PLATFORM",
+    "FIXED_CLOCK_PERIOD_NS",
+    "FIXED_CLOCK_NAME",
+    "FIXED_SDC",
+    "FIXED_SDC_PATH",
+    "FIXED_DESIGN_CONFIG",
+    "FIXED_RTL",
+    "FIXED_CORNERS",
+    "FIXED_LIB",
+    "PROTECTED_ASSETS",
+    "stock_candidate_config",
+    "candidate_with_defaults",
+    "dumps_candidate_json",
+)
+
 
 class BaselineError(ValueError):
     """Baseline misuse or failed verification (invalid record, drift)."""
 
 
-def compute_candidate_hash(candidate: Mapping[str, Any]) -> str:
-    """Hash the stock-normalized candidate JSON (sha256 hex)."""
-    full = gcd.candidate_with_defaults(candidate)
-    canonical = gcd.dumps_candidate_json(full)
+def _resolve_task(task: Any | None) -> Any:
+    """Return the task-config module (default: the GCD config).
+
+    Any module exposing the shared surface (:data:`_TASK_ATTRS`) is
+    accepted; anything else raises :class:`BaselineError` (fail closed).
+    No design identity is inspected here beyond that surface.
+    """
+    if task is None:
+        return gcd
+    missing = [attr for attr in _TASK_ATTRS if not hasattr(task, attr)]
+    if missing:
+        raise BaselineError(
+            f"task config {getattr(task, '__name__', task)!r} is missing "
+            f"shared surface attributes: {missing}"
+        )
+    return task
+
+
+def compute_candidate_hash(
+    candidate: Mapping[str, Any],
+    *,
+    task: Any | None = None,
+) -> str:
+    """Hash the stock-normalized candidate JSON (sha256 hex).
+
+    :param task: task-config module (default: the GCD config). The
+        candidate is normalized with that task's bounds/stocks, so each
+        task's stock hashes independently.
+    """
+    cfg = _resolve_task(task)
+    full = cfg.candidate_with_defaults(candidate)
+    canonical = cfg.dumps_candidate_json(full)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def fixed_design_facts() -> dict[str, Any]:
+def fixed_design_facts(*, task: Any | None = None) -> dict[str, Any]:
     """Return the fixed design facts covered by the protected hash."""
+    cfg = _resolve_task(task)
     return {
-        "design": gcd.FIXED_DESIGN,
-        "platform": gcd.FIXED_PLATFORM,
-        "clock_period_ns": gcd.FIXED_CLOCK_PERIOD_NS,
-        "clock_name": gcd.FIXED_CLOCK_NAME,
-        "sdc": gcd.FIXED_SDC,
-        "sdc_sha256": hashlib.sha256(gcd.FIXED_SDC_PATH.read_bytes()).hexdigest(),
-        "design_config": gcd.FIXED_DESIGN_CONFIG,
-        "rtl": list(gcd.FIXED_RTL),
-        "corners": gcd.FIXED_CORNERS,
-        "lib": gcd.FIXED_LIB,
-        "endpoint": gcd.GCD_ENDPOINT,
+        "design": cfg.FIXED_DESIGN,
+        "platform": cfg.FIXED_PLATFORM,
+        "clock_period_ns": cfg.FIXED_CLOCK_PERIOD_NS,
+        "clock_name": cfg.FIXED_CLOCK_NAME,
+        "sdc": cfg.FIXED_SDC,
+        "sdc_sha256": hashlib.sha256(cfg.FIXED_SDC_PATH.read_bytes()).hexdigest(),
+        "design_config": cfg.FIXED_DESIGN_CONFIG,
+        "rtl": list(cfg.FIXED_RTL),
+        "corners": cfg.FIXED_CORNERS,
+        "lib": cfg.FIXED_LIB,
+        "endpoint": cfg.ENDPOINT,
     }
 
 
 def compute_protected_hash(
     protected_assets: Any | None = None,
     fixed_facts: Mapping[str, Any] | None = None,
+    *,
+    task: Any | None = None,
 ) -> str:
     """Hash the protected-asset list plus fixed design facts.
 
-    Defaults come from :mod:`config`; pass explicit values only to
-    simulate a source/config change (tests use this to prove
-    invalidation).
+    Defaults come from the ``task`` config (default: GCD); pass
+    explicit values only to simulate a source/config change (tests use
+    this to prove invalidation).
     """
-    assets = list(gcd.PROTECTED_ASSETS) if protected_assets is None else list(protected_assets)
-    facts = fixed_design_facts() if fixed_facts is None else dict(fixed_facts)
+    cfg = _resolve_task(task)
+    assets = list(cfg.PROTECTED_ASSETS) if protected_assets is None else list(protected_assets)
+    facts = fixed_design_facts(task=cfg) if fixed_facts is None else dict(fixed_facts)
     canonical = json.dumps(
         {"protected_assets": sorted(assets), "fixed_design": facts},
         sort_keys=True,
@@ -118,19 +183,22 @@ def fingerprint_inputs(
     image_pinned_ref: str | None = None,
     protected_assets: Any | None = None,
     fixed_facts: Mapping[str, Any] | None = None,
+    task: Any | None = None,
 ) -> dict[str, str]:
     """Build the deterministic input/tool fingerprint (no runtimes).
 
     Covers the pinned ORFS commit, the digest-pinned image ref, the
     normalized stock candidate hash, and the protected-asset hash.
-    Wallclock/timestamps are never included.
+    Wallclock/timestamps are never included. Defaults come from the
+    ``task`` config (default: GCD).
     """
-    full = gcd.candidate_with_defaults(dict(candidate) if candidate is not None else {})
+    cfg = _resolve_task(task)
+    full = cfg.candidate_with_defaults(dict(candidate) if candidate is not None else {})
     return {
-        "orfs_commit": orfs_commit or gcd.ORFS_COMMIT,
-        "image_pinned_ref": image_pinned_ref or gcd.IMAGE_PINNED_REF,
-        "candidate_hash": compute_candidate_hash(full),
-        "protected_hash": compute_protected_hash(protected_assets, fixed_facts),
+        "orfs_commit": orfs_commit or cfg.ORFS_COMMIT,
+        "image_pinned_ref": image_pinned_ref or cfg.IMAGE_PINNED_REF,
+        "candidate_hash": compute_candidate_hash(full, task=cfg),
+        "protected_hash": compute_protected_hash(protected_assets, fixed_facts, task=cfg),
     }
 
 
@@ -257,6 +325,7 @@ def build_baseline_record(
     tool_versions: Mapping[str, Any] | None = None,
     resources: Mapping[str, Any] | None = None,
     created_by: str = "scripts/generate_openroad_baseline.py",
+    task: Any | None = None,
 ) -> dict[str, Any]:
     """Build a verified baseline record from exactly three run metrics.
 
@@ -266,8 +335,11 @@ def build_baseline_record(
     tolerances of the first run). The stored ``metrics`` aggregate is
     the mean of the three runs; per-run values are kept under ``runs``.
     Never fabricates values: only the supplied measured metrics are
-    stored.
+    stored. The record is keyed to the ``task`` config (default: GCD):
+    task id/version, candidate stocks, and fingerprints all come from
+    it, so one task's record can never validate under another task.
     """
+    cfg = _resolve_task(task)
     tols = _check_tolerances(
         dict(tolerances) if tolerances is not None else dict(DEFAULT_TOLERANCES)
     )
@@ -308,16 +380,16 @@ def build_baseline_record(
         raise BaselineError("seeds must cover exactly 3 runs")
     resolved_ids = list(run_ids) if run_ids is not None else [f"run-{i}" for i in range(3)]
     resolved_seeds = list(seeds) if seeds is not None else [0, 1, 2]
-    stock = gcd.stock_candidate_config()
-    fingerprint = fingerprint_inputs(stock)
+    stock = cfg.stock_candidate_config()
+    fingerprint = fingerprint_inputs(stock, task=cfg)
     aggregate = {
         key: sum(entry[key] for entry in normalized) / REQUIRED_RUN_COUNT for key in METRIC_KEYS
     }
     record = {
         "schema_version": BASELINE_SCHEMA_VERSION,
         "status": BASELINE_STATUS_VERIFIED,
-        "task_id": gcd.GCD_TASK_ID,
-        "task_version": gcd.GCD_TASK_VERSION,
+        "task_id": cfg.TASK_ID,
+        "task_version": cfg.TASK_VERSION,
         "orfs_commit": fingerprint["orfs_commit"],
         "image_pinned_ref": fingerprint["image_pinned_ref"],
         "candidate": stock,
@@ -349,7 +421,7 @@ def build_baseline_record(
             "notes": "measured on the Linux route during generation",
         },
     }
-    return validate_baseline(record)
+    return validate_baseline(record, task=cfg)
 
 
 def load_baseline(path: str | os.PathLike[str]) -> dict[str, Any]:
@@ -372,6 +444,7 @@ def validate_baseline(
     record: Mapping[str, Any],
     *,
     expected_fingerprint: Mapping[str, Any] | None = None,
+    task: Any | None = None,
 ) -> dict[str, Any]:
     """Fail-closed validation of a baseline record for scoring use.
 
@@ -379,8 +452,12 @@ def validate_baseline(
     placeholders, zero/invalid/non-finite baseline metrics, bad
     tolerances, thin provenance, and any fingerprint mismatch (pinned
     source, image, candidate, or protected-asset change invalidates the
-    record). Returns the record as a plain dict on success.
+    record). The record must belong to the ``task`` config (default:
+    GCD): a record built for another task fails here on task identity
+    before any comparison. Returns the record as a plain dict on
+    success.
     """
+    cfg = _resolve_task(task)
     if not isinstance(record, Mapping):
         raise BaselineError("baseline record must be an object")
     if record.get("schema_version") != BASELINE_SCHEMA_VERSION:
@@ -388,18 +465,18 @@ def validate_baseline(
             f"unknown baseline schema {record.get('schema_version')!r} "
             f"(expected {BASELINE_SCHEMA_VERSION}): fail closed"
         )
-    if record.get("task_id") != gcd.GCD_TASK_ID:
-        raise BaselineError(f"baseline task_id {record.get('task_id')!r} != {gcd.GCD_TASK_ID!r}")
-    if record.get("task_version") != gcd.GCD_TASK_VERSION:
+    if record.get("task_id") != cfg.TASK_ID:
+        raise BaselineError(f"baseline task_id {record.get('task_id')!r} != {cfg.TASK_ID!r}")
+    if record.get("task_version") != cfg.TASK_VERSION:
         raise BaselineError(
-            f"baseline task_version {record.get('task_version')!r} != {gcd.GCD_TASK_VERSION!r}"
+            f"baseline task_version {record.get('task_version')!r} != {cfg.TASK_VERSION!r}"
         )
     if record.get("status") != BASELINE_STATUS_VERIFIED:
         raise BaselineError(
             f"baseline status {record.get('status')!r} is not usable for scoring "
             f"(need {BASELINE_STATUS_VERIFIED!r}): fail closed"
         )
-    current = fingerprint_inputs(record.get("candidate", {}))
+    current = fingerprint_inputs(record.get("candidate", {}), task=cfg)
     for key in ("orfs_commit", "image_pinned_ref", "candidate_hash", "protected_hash"):
         stored = record.get(key)
         if stored != current[key]:
@@ -408,7 +485,7 @@ def validate_baseline(
                 f"(stored {stored!r} != current {current[key]!r}): "
                 "source/config/toolchain change invalidates the baseline"
             )
-    if gcd.candidate_with_defaults(record.get("candidate", {})) != gcd.stock_candidate_config():
+    if cfg.candidate_with_defaults(record.get("candidate", {})) != cfg.stock_candidate_config():
         raise BaselineError(
             "baseline candidate is not the pinned stock candidate: "
             "the reference record only covers the stock task"
@@ -454,17 +531,20 @@ def validate_baseline(
 def check_metrics_against_baseline(
     baseline: Mapping[str, Any],
     candidate_metrics: Any,
+    *,
+    task: Any | None = None,
 ) -> list[str]:
     """Compare candidate metrics to a validated baseline.
 
     Returns reason codes (empty list means a match). The baseline is
-    validated first, so a TBD/unverified or drifted-pin record fails
-    closed via :class:`BaselineError` before any comparison. Reasons:
+    validated first against the ``task`` config (default: GCD), so a
+    TBD/unverified, drifted-pin, or other-task record fails closed via
+    :class:`BaselineError` before any comparison. Reasons:
     ``candidate-invalid``, ``metric-drift`` (numeric tolerances),
     ``completion-mismatch``, ``drc-mismatch``,
     ``unconstrained-mismatch``.
     """
-    record = validate_baseline(baseline)
+    record = validate_baseline(baseline, task=task)
     tols = _check_tolerances(record["tolerances"])
     stored = record["metrics"]
     entry = metrics_to_record(candidate_metrics)

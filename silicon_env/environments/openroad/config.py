@@ -49,6 +49,15 @@ GCD_TASK_VERSION = "0.2.0"
 GCD_GRADER_ID = "gcd-area-grader"
 GCD_GRADER_VERSION = "0.1.0"
 
+#: Shared task-identity surface (same attribute names as the second task's
+#: narrow config). The generic baseline/grader/report helpers read only
+#: these aliases plus the ``FIXED_*`` facts and candidate helpers, so a
+#: second task's data flows through without design-conditional branches.
+TASK_ID = GCD_TASK_ID
+TASK_VERSION = GCD_TASK_VERSION
+GRADER_ID = GCD_GRADER_ID
+GRADER_VERSION = GCD_GRADER_VERSION
+
 #: The single editable file. The only entry of ``allowed_edit_paths``.
 CANDIDATE_RELPATH = "candidate.json"
 
@@ -56,6 +65,9 @@ CANDIDATE_RELPATH = "candidate.json"
 #: The default ``make`` target builds the full flow ending at final
 #: post-detailed-route reports.
 GCD_ENDPOINT = "final"
+
+#: Shared endpoint alias (same attribute name as the second task's config).
+ENDPOINT = GCD_ENDPOINT
 
 # --- pinned sources (mirror toolchain.lock.json, M1-01) --------------------
 
@@ -427,6 +439,7 @@ __all__ = [
     "CORE_UTILIZATION_MAX",
     "CORE_UTILIZATION_MIN",
     "CORE_UTILIZATION_STOCK",
+    "ENDPOINT",
     "FIXED_CLOCK_NAME",
     "FIXED_CLOCK_PERIOD_NS",
     "FIXED_CORNERS",
@@ -441,6 +454,8 @@ __all__ = [
     "GCD_GRADER_VERSION",
     "GCD_TASK_ID",
     "GCD_TASK_VERSION",
+    "GRADER_ID",
+    "GRADER_VERSION",
     "IMAGE_DIGEST",
     "IMAGE_PINNED_REF",
     "ORFS_COMMIT",
@@ -451,7 +466,9 @@ __all__ = [
     "PROTECTED_ASSETS",
     "SOURCE_REF",
     "TASK_DIR",
+    "TASK_ID",
     "TASK_MANIFEST_PATH",
+    "TASK_VERSION",
     "TOOLCHAIN_REFS",
     "candidate_with_defaults",
     "dumps_candidate_json",

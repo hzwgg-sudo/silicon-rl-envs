@@ -4,6 +4,13 @@ ORFS 26Q2 scripts/report_metrics.tcl writes full-precision metrics to
 6_report.json; rounded timing and area text remain required evidence.
 Routed completion comes from the adapter's fresh final artifacts and exit
 status, since upstream does not emit our synthetic completion marker.
+
+Report discovery defaults to the GCD output paths; pass explicit
+``design``/``platform`` names to read another task's tree (same
+ORFS 6_report.json schema and DRC key
+``detailedroute__route__drc_errors``). No design-conditional branches:
+the names only select the ``reports/<platform>/<design>/<variant>``
+subtree.
 """
 from __future__ import annotations
 
@@ -18,8 +25,27 @@ from silicon_env.environments.openroad import config as gcd
 from silicon_env.environments.openroad import metrics
 
 
+def _is_safe_tree_name(value: Any) -> bool:
+    """True for plain single-path-segment names (``gcd``, ``nangate45``).
+
+    Anything with a separator, parent reference, or empty value is
+    rejected so a caller-supplied design/platform can never steer reads
+    outside the output tree (fail closed).
+    """
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and "/" not in value
+        and "\\" not in value
+        and ".." not in value
+    )
+
+
 def discover_report_texts(
     flow_result: Any, flow_workdir: str | os.PathLike[str] | None = None,
+    *,
+    design: str | None = None,
+    platform: str | None = None,
 ) -> dict[str, str | None]:
     # flow_workdir is retained for callers of the former generator helper.
     # Never fall back to the shared checkout, another variant, or another stage.
@@ -29,11 +55,17 @@ def discover_report_texts(
     empty = {"timing_text": None, "area_text": None, "drc_text": None}
     if not output or not isinstance(start_ns, int):
         return empty
+    if design is not None and not _is_safe_tree_name(design):
+        return empty
+    if platform is not None and not _is_safe_tree_name(platform):
+        return empty
     root = Path(output).resolve()
     variant = provenance.get("variant", "default")
     if variant != "default":
         return empty
-    suffix = Path(gcd.FIXED_PLATFORM) / gcd.FIXED_DESIGN / variant
+    design_name = design if design is not None else gcd.FIXED_DESIGN
+    platform_name = platform if platform is not None else gcd.FIXED_PLATFORM
+    suffix = Path(platform_name) / design_name / variant
 
     def read(relative: Path) -> str | None:
         path = root / relative
@@ -88,10 +120,17 @@ def discover_report_texts(
     return {"timing_text": timing, "area_text": area, "drc_text": drc}
 
 
-def parse_generated_reports(flow_result: Any) -> metrics.GcdMetrics:
-    texts = discover_report_texts(flow_result)
+def parse_generated_reports(
+    flow_result: Any,
+    *,
+    design: str | None = None,
+    platform: str | None = None,
+) -> metrics.GcdMetrics:
+    texts = discover_report_texts(flow_result, design=design, platform=platform)
     root = flow_result.provenance.get("output_dir", "<missing-output>")
-    suffix = f"{gcd.FIXED_PLATFORM}/{gcd.FIXED_DESIGN}/default"
+    design_name = design if _is_safe_tree_name(design) else gcd.FIXED_DESIGN
+    platform_name = platform if _is_safe_tree_name(platform) else gcd.FIXED_PLATFORM
+    suffix = f"{platform_name}/{design_name}/default"
     return metrics.parse_flow_result(
         flow_result, **texts,
         timing_ref=f"{root}/logs/{suffix}/6_report.json",

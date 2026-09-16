@@ -50,7 +50,7 @@ def test_manifest_loads_and_task_validates():
     spec = ibex.validate_manifest(manifest)
     spec.validate()
     assert spec.task_id == ibex.IBEX_TASK_ID == "ibex-nangate45"
-    assert spec.task_version == ibex.IBEX_TASK_VERSION == "0.1.0"
+    assert spec.task_version == ibex.IBEX_TASK_VERSION == "0.2.0"
     assert "submit" in spec.allowed_actions
     assert list(spec.allowed_edit_paths) == [ibex.CANDIDATE_RELPATH]
     # Round-trips through strict M0 contracts.
@@ -64,7 +64,7 @@ def test_manifest_matches_module_constants():
     assert knobs["CORE_UTILIZATION"]["stock"] == ibex.CORE_UTILIZATION_STOCK == 50.0
     assert ibex.load_task_spec().to_dict() == ibex.make_ibex_task().to_dict()
     fixed = manifest["fixed_design"]
-    assert fixed["clock_period_ns"] == 2.20
+    assert fixed["clock_period_ns"] == 2.30
     assert fixed["clock_name"] == "core_clock"
     assert fixed["design"] == "ibex"
     assert fixed["design_name"] == "ibex_core"
@@ -97,6 +97,30 @@ def test_manifest_task_json_is_strict():
     assert ibex.load_manifest_dict() == json.loads(text)
 
 
+def test_v020_clock_is_margined_over_measured_min_period():
+    # M2-02: v0.1.0 carried the upstream 2.20 ns period; the measured
+    # stock probe (run 35054041797) needs a 2.2158 ns min period
+    # (fmax 451.3 MHz), so 2.20 ns is ~16 ps too tight for the
+    # zero-negative-slack grader. v0.2.0 fixes 2.30 ns (~3.8% margin).
+    assert ibex.FIXED_CLOCK_PERIOD_NS == 2.30
+    assert ibex.load_manifest_dict()["fixed_design"]["clock_period_ns"] == 2.30
+    assert ibex.FIXED_CLOCK_PERIOD_NS > 2.2158
+    margin = (ibex.FIXED_CLOCK_PERIOD_NS - 2.2158) / 2.2158
+    assert margin == pytest.approx(0.038, abs=0.001)
+    sdc_text = ibex.FIXED_SDC_PATH.read_text(encoding="utf-8")
+    assert "set clk_period 2.3" in sdc_text
+    assert "set clk_port_name clk_i" in sdc_text
+    # Derived IO delays keep the upstream 0.2 ratio via the same expr
+    # (0.46 ns at the 2.30 ns period).
+    assert "[expr $clk_period * $clk_io_pct]" in sdc_text
+    assert "set clk_io_pct 0.2" in sdc_text
+    assert "task v0.2.0" in sdc_text.lower()  # header names the new version
+    manifest = ibex.load_manifest_dict()
+    assert manifest["task"]["task_version"] == "0.2.0"
+    assert "v0.2.0" in manifest["notes"]
+    assert "35054041797" in manifest["notes"]
+
+
 # --- unknown keys / clock + RTL immutability --------------------------------
 
 
@@ -125,15 +149,15 @@ def test_unknown_keys_rejected(key):
 def test_clock_and_rtl_cannot_pass_through_surface():
     for attempt in (
         {"CLOCK_PERIOD": 2.0},
-        {"clock_period_ns": 2.2},
+        {"clock_period_ns": 2.3},
         {"SDC_FILE": "other.sdc"},
         {"VERILOG_FILES": "other.v"},
-        {"PLACE_DENSITY": 0.5, "CLOCK_PERIOD": 2.2},
+        {"PLACE_DENSITY": 0.5, "CLOCK_PERIOD": 2.3},
     ):
         with pytest.raises(ContractError):
             ibex.validate_candidate_config(attempt)
     manifest = ibex.load_manifest_dict()
-    assert manifest["fixed_design"]["clock_period_ns"] == 2.20
+    assert manifest["fixed_design"]["clock_period_ns"] == 2.30
     assert manifest["fixed_design"]["rtl"] == list(ibex.FIXED_RTL)
 
 
