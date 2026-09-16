@@ -1,26 +1,53 @@
-"""First GCD area-under-timing task with a constrained edit surface (M1-02).
+"""Second Ibex area-under-timing task with a constrained edit surface (M2-01).
 
 The task optimizes physical design only: RTL, SDC, libraries, and grading
 inputs are immutable. The agent may override exactly two numeric knobs --
 ``PLACE_DENSITY`` and ``CORE_UTILIZATION`` -- through the single editable
-file :data:`CANDIDATE_RELPATH`. Everything else (notably the fixed 0.60 ns
-clock and the RTL sources) is outside the allowed interface, so a candidate
-cannot relax timing constraints or alter function through it.
+file :data:`CANDIDATE_RELPATH`. Everything else (notably the fixed 2.30 ns
+clock and the Ibex RTL sources) is outside the allowed interface, so a
+candidate cannot relax timing constraints or alter function through it.
 
-Stock values are read off the pinned ORFS revision (see
-``toolchain.lock.json``):
+Task v0.2.0 (M2-02) re-times the fixed clock from the v0.1.0 upstream
+2.20 ns to a margined 2.30 ns: the measured v0.1.0 stock run (Linux,
+pinned image+commit, run 35054041797) reached the ``final`` endpoint with
+exit 0, DRC 0 and 30029 um^2 stdcell area but setup WNS -0.0159 ns / TNS
+-0.0315 ns (4 violations, fmax 451.3 MHz, i.e. a 2.2158 ns min period),
+so 2.20 ns is ~16 ps too tight for the zero-negative-slack grader.
+2.30 ns carries ~3.8% margin over 2.2158 ns (robust to detailed-route
+seed variation) while the grader bounds (WNS >= 0, TNS == 0) stay
+unchanged. This mirrors the GCD v0.1.0 -> v0.2.0 precedent (0.46 ns
+stock failure re-pinned at fixed 0.60 ns).
+
+This module mirrors ``config.py`` (GCD, M1-02) on purpose: the scope of
+#20 forbids a generic plugin framework and forbids ``if design == ...``
+branches in the generic core (``flow.py`` / ``evaluator.py`` /
+``grader.py``), so the second task gets a narrow task-specific config with
+the same action space. Validation semantics are identical to GCD's; only
+the fixed-design facts and the ``CORE_UTILIZATION`` stock differ. The
+generic baseline/grader/report helpers accept this module as their
+``task`` argument (M2-02); they read only the shared attribute surface
+(``TASK_ID`` / ``TASK_VERSION`` / ``ENDPOINT`` plus the ``FIXED_*`` facts
+and candidate helpers also present on ``config.py``), so no
+ design-conditional logic is needed.
+
+ Stock values are read off the pinned ORFS revision (see
+``toolchain.lock.json`` -- the same pin GCD qualified, commit
+``036d106273e66855cd5214d49518fd0f0df7de61``, image
+``docker.io/openroad/orfs:26Q2@sha256:7832...47b61``):
 
 - ``PLACE_DENSITY`` stock ``0.30``: platform default from
   ``flow/platforms/nangate45/config.mk`` (``export PLACE_DENSITY ?= 0.30``);
-  the GCD ``config.mk`` does not override it.
-- ``CORE_UTILIZATION`` stock ``55``: GCD design default from
-  ``flow/designs/nangate45/gcd/config.mk``
-  (``export CORE_UTILIZATION ?= 55``).
+  the Ibex ``config.mk`` does not override it (it only sets
+  ``PLACE_DENSITY_LB_ADDON = 0.20``).
+- ``CORE_UTILIZATION`` stock ``50``: Ibex design default from
+  ``flow/designs/nangate45/ibex/config.mk``
+  (``export CORE_UTILIZATION ?= 50``) -- documented adjustment from GCD's
+  ``55``; demanded by the upstream Ibex defaults.
 
-Bounds are task-supported safe ranges inside the ORFS semantic ranges
-(density 0-1, utilization 0-100 percent), recorded here as supported by the
-pin. Flow execution, metrics, and the grader land in follow-on tickets
-(M1-03+); this module defines no flow, metrics, or grading logic.
+Bounds reuse GCD's task-supported safe ranges inside the ORFS semantic
+ranges (density 0-1, utilization 0-100 percent). Flow execution, metrics,
+and the grader land in follow-on tickets (M2-02+); this module defines no
+flow, metrics, or grading logic.
 
 Stdlib-only, Python >= 3.10. Validation is pure (no I/O except explicit
 manifest loaders, no subprocess, no network).
@@ -44,32 +71,34 @@ from silicon_env.types import (
 
 # --- task identity ---------------------------------------------------------
 
-GCD_TASK_ID = "gcd-nangate45"
-GCD_TASK_VERSION = "0.2.0"
-GCD_GRADER_ID = "gcd-area-grader"
-GCD_GRADER_VERSION = "0.1.0"
+IBEX_TASK_ID = "ibex-nangate45"
+IBEX_TASK_VERSION = "0.2.0"
+IBEX_GRADER_ID = "ibex-area-grader"
+IBEX_GRADER_VERSION = "0.1.0"
 
-#: Shared task-identity surface (same attribute names as the second task's
-#: narrow config). The generic baseline/grader/report helpers read only
-#: these aliases plus the ``FIXED_*`` facts and candidate helpers, so a
-#: second task's data flows through without design-conditional branches.
-TASK_ID = GCD_TASK_ID
-TASK_VERSION = GCD_TASK_VERSION
-GRADER_ID = GCD_GRADER_ID
-GRADER_VERSION = GCD_GRADER_VERSION
+#: Shared task-identity surface also present on ``config.py`` (GCD).
+#: The generic baseline/grader/report helpers read only these aliases
+#: (plus the ``FIXED_*`` facts and candidate helpers), so task-specific
+#: data flows through without design-conditional branches.
+TASK_ID = IBEX_TASK_ID
+TASK_VERSION = IBEX_TASK_VERSION
+GRADER_ID = IBEX_GRADER_ID
+GRADER_VERSION = IBEX_GRADER_VERSION
 
 #: The single editable file. The only entry of ``allowed_edit_paths``.
-CANDIDATE_RELPATH = "candidate.json"
+#: A separate scratch filename from GCD's so the two tasks never share
+#: candidate state or baseline fingerprints.
+CANDIDATE_RELPATH = "candidate_ibex.json"
 
-#: Fixed physical-design endpoint for the later flow ticket (M1-03).
+#: Fixed physical-design endpoint for the later flow ticket (M2-02+).
 #: The default ``make`` target builds the full flow ending at final
 #: post-detailed-route reports.
-GCD_ENDPOINT = "final"
+IBEX_ENDPOINT = "final"
 
-#: Shared endpoint alias (same attribute name as the second task's config).
-ENDPOINT = GCD_ENDPOINT
+#: Shared endpoint alias (mirrors ``config.ENDPOINT`` for GCD).
+ENDPOINT = IBEX_ENDPOINT
 
-# --- pinned sources (mirror toolchain.lock.json, M1-01) --------------------
+# --- pinned sources (same ORFS profile pin as GCD, M1-01) -------------------
 
 ORFS_COMMIT = "036d106273e66855cd5214d49518fd0f0df7de61"
 ORFS_TAG = "26Q2"
@@ -81,7 +110,7 @@ IMAGE_DIGEST = (
     "sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61"
 )
 
-SOURCE_REF = f"orfs:{ORFS_COMMIT}:flow/designs/nangate45/gcd"
+SOURCE_REF = f"orfs:{ORFS_COMMIT}:flow/designs/nangate45/ibex"
 TOOLCHAIN_REFS = {
     "orfs": ORFS_COMMIT,
     "orfs-image": IMAGE_PINNED_REF,
@@ -89,24 +118,59 @@ TOOLCHAIN_REFS = {
 
 # --- fixed design facts (immutable; not settable via the candidate) --------
 
-FIXED_DESIGN = "gcd"
+FIXED_DESIGN = "ibex"
+FIXED_DESIGN_NAME = "ibex_core"
 FIXED_PLATFORM = "nangate45"
-FIXED_CLOCK_PERIOD_NS = 0.60
+FIXED_CLOCK_PERIOD_NS = 2.30
 FIXED_CLOCK_NAME = "core_clock"
-FIXED_SDC = "tasks/gcd/constraint.sdc"
+FIXED_CLOCK_PORT = "clk_i"
+FIXED_SDC = "tasks/ibex/constraint.sdc"
 FIXED_SDC_PATH = Path(__file__).parent / FIXED_SDC
-FIXED_DESIGN_CONFIG = "flow/designs/nangate45/gcd/config.mk"
-FIXED_RTL = ("flow/designs/src/gcd/gcd.v",)
+FIXED_DESIGN_CONFIG = "flow/designs/nangate45/ibex/config.mk"
+FIXED_UPSTREAM_SDC = "flow/designs/nangate45/ibex/constraint.sdc"
+#: ``VERILOG_FILES`` in the Ibex ``config.mk`` is
+#: ``sort(wildcard $(DESIGN_HOME)/src/ibex_sv/*.sv)`` plus the synthesis
+#: shim below; the vendor lowRISC prim directory is a Verilog *include*
+#: dir, not a synthesised source. ``SYNTH_HDL_FRONTEND = slang``.
+FIXED_RTL = (
+    "flow/designs/src/ibex_sv/ibex_alu.sv",
+    "flow/designs/src/ibex_sv/ibex_compressed_decoder.sv",
+    "flow/designs/src/ibex_sv/ibex_controller.sv",
+    "flow/designs/src/ibex_sv/ibex_core.sv",
+    "flow/designs/src/ibex_sv/ibex_counter.sv",
+    "flow/designs/src/ibex_sv/ibex_cs_registers.sv",
+    "flow/designs/src/ibex_sv/ibex_csr.sv",
+    "flow/designs/src/ibex_sv/ibex_decoder.sv",
+    "flow/designs/src/ibex_sv/ibex_ex_block.sv",
+    "flow/designs/src/ibex_sv/ibex_fetch_fifo.sv",
+    "flow/designs/src/ibex_sv/ibex_id_stage.sv",
+    "flow/designs/src/ibex_sv/ibex_if_stage.sv",
+    "flow/designs/src/ibex_sv/ibex_load_store_unit.sv",
+    "flow/designs/src/ibex_sv/ibex_multdiv_fast.sv",
+    "flow/designs/src/ibex_sv/ibex_multdiv_slow.sv",
+    "flow/designs/src/ibex_sv/ibex_pkg.sv",
+    "flow/designs/src/ibex_sv/ibex_pmp.sv",
+    "flow/designs/src/ibex_sv/ibex_prefetch_buffer.sv",
+    "flow/designs/src/ibex_sv/ibex_register_file_ff.sv",
+    "flow/designs/src/ibex_sv/ibex_wb_stage.sv",
+    "flow/designs/src/ibex_sv/syn/rtl/prim_clock_gating.v",
+)
+FIXED_VERILOG_INCLUDE_DIRS = (
+    "flow/designs/src/ibex_sv/vendor/lowrisc_ip/prim/rtl/",
+)
+FIXED_SYNTH_HDL_FRONTEND = "slang"
 FIXED_CORNERS = "typical (NangateOpenCellLibrary_typical.lib)"
 FIXED_LIB = "flow/platforms/nangate45/lib/NangateOpenCellLibrary_typical.lib"
 
 #: Protected (read-only) assets, recorded as groundwork for later tickets.
-#: None of these may appear in ``allowed_edit_paths``.
+#: None of these may appear in ``allowed_edit_paths``. Ibex-specific paths
+#: are disjoint from GCD's task paths; shared platform files appear in
+#: both tasks' manifests by path identity (same pin, same bytes).
 PROTECTED_ASSETS = (
     FIXED_SDC,
-    "flow/designs/src/gcd/gcd.v",
-    "flow/designs/nangate45/gcd/constraint.sdc",
-    "flow/designs/nangate45/gcd/config.mk",
+    FIXED_UPSTREAM_SDC,
+    FIXED_DESIGN_CONFIG,
+    *FIXED_RTL,
     "flow/platforms/nangate45/config.mk",
     "flow/platforms/nangate45/lef/NangateOpenCellLibrary.tech.lef",
     "flow/platforms/nangate45/lib/NangateOpenCellLibrary_typical.lib",
@@ -114,7 +178,21 @@ PROTECTED_ASSETS = (
     "results/",
 )
 
-# --- config surface: the only two settable knobs ----------------------------
+#: Upstream assets the preflight gate must find in a pinned checkout before
+#: any Ibex flow may start. Kept here (not in the shared ``toolchain.lock``,
+#: whose ``required_assets``/``design`` sections stay GCD-scoped so GCD lock
+#: verification is untouched) and mirrored in ``tasks/ibex/task.json``.
+REQUIRED_ASSETS = (
+    "flow/Makefile",
+    "flow/designs/nangate45/ibex/config.mk",
+    "flow/designs/nangate45/ibex/constraint.sdc",
+    *FIXED_RTL,
+    "flow/platforms/nangate45/config.mk",
+    "flow/platforms/nangate45/lef/NangateOpenCellLibrary.tech.lef",
+    "flow/platforms/nangate45/lib/NangateOpenCellLibrary_typical.lib",
+)
+
+# --- config surface: the only two settable knobs (same as GCD) --------------
 
 ALLOWED_KEYS = ("PLACE_DENSITY", "CORE_UTILIZATION")
 
@@ -124,7 +202,7 @@ PLACE_DENSITY_STOCK = 0.30
 
 CORE_UTILIZATION_MIN = 20.0
 CORE_UTILIZATION_MAX = 90.0
-CORE_UTILIZATION_STOCK = 55.0
+CORE_UTILIZATION_STOCK = 50.0
 
 _BOUNDS: dict[str, tuple[float, float, float]] = {
     "PLACE_DENSITY": (PLACE_DENSITY_MIN, PLACE_DENSITY_MAX, PLACE_DENSITY_STOCK),
@@ -239,29 +317,33 @@ def candidate_with_defaults(candidate: Mapping[str, Any]) -> dict[str, float]:
 
 # --- TaskSpec integration (M0 contracts) -------------------------------------
 
-TASK_DIR = Path(__file__).with_name("tasks") / "gcd"
+TASK_DIR = Path(__file__).with_name("tasks") / "ibex"
 TASK_MANIFEST_PATH = TASK_DIR / "task.json"
 
 ALLOWED_ACTIONS = ("read_file", "write_file", "run_tool", "submit", "noop")
 
 
-def make_gcd_task(
+def make_ibex_task(
     *,
     seed: int = 0,
     max_steps: int = 10,
-    max_wallclock_s: float = 3600.0,
+    max_wallclock_s: float = 7200.0,
     max_tool_calls: int = 10,
 ) -> TaskSpec:
-    """Build the canonical GCD :class:`TaskSpec`.
+    """Build the canonical Ibex :class:`TaskSpec`.
 
     Only :data:`CANDIDATE_RELPATH` is editable; RTL, SDC, libraries, and
-    grading inputs stay immutable. The grader deadline accommodates real
-    physical design execution while respecting the task wall-clock budget.
+    grading inputs stay immutable. The default wall-clock budget is wider
+    than GCD's 3600 s: Ibex is a full RISC-V core (~20x the GCD cell
+    count class) and the v0.1.0 stock probe measured 1591 s wallclock
+    (run 35054041797); 7200 s remains an estimate until M2-02's
+    three-run qualification records peak RSS. The grader deadline
+    matches the task wall-clock budget.
     """
     task = TaskSpec(
         schema_version=1,
-        task_id=GCD_TASK_ID,
-        task_version=GCD_TASK_VERSION,
+        task_id=IBEX_TASK_ID,
+        task_version=IBEX_TASK_VERSION,
         source_ref=SOURCE_REF,
         toolchain_refs=dict(TOOLCHAIN_REFS),
         seed=seed,
@@ -274,8 +356,8 @@ def make_gcd_task(
             max_tool_calls=max_tool_calls,
         ),
         grader=GraderConfig(
-            grader_id=GCD_GRADER_ID,
-            grader_version=GCD_GRADER_VERSION,
+            grader_id=IBEX_GRADER_ID,
+            grader_version=IBEX_GRADER_VERSION,
             timeout_s=min(7200.0, float(max_wallclock_s)),
         ),
     )
@@ -287,11 +369,11 @@ def to_task_spec(
     *,
     seed: int = 0,
     max_steps: int = 10,
-    max_wallclock_s: float = 3600.0,
+    max_wallclock_s: float = 7200.0,
     max_tool_calls: int = 10,
 ) -> TaskSpec:
-    """Alias for :func:`make_gcd_task` (flow-ticket convenience)."""
-    return make_gcd_task(
+    """Alias for :func:`make_ibex_task` (flow-ticket convenience)."""
+    return make_ibex_task(
         seed=seed,
         max_steps=max_steps,
         max_wallclock_s=max_wallclock_s,
@@ -309,8 +391,8 @@ def load_manifest_dict(
     try:
         text = target.read_text(encoding="utf-8")
     except OSError as exc:
-        raise ContractError(f"cannot read GCD manifest {target}: {exc}") from exc
-    return loads_dict_strict(text, what="gcd task manifest")
+        raise ContractError(f"cannot read Ibex manifest {target}: {exc}") from exc
+    return loads_dict_strict(text, what="ibex task manifest")
 
 
 def validate_manifest(manifest: Mapping[str, Any]) -> TaskSpec:
@@ -321,19 +403,21 @@ def validate_manifest(manifest: Mapping[str, Any]) -> TaskSpec:
     must not intersect ``allowed_edit_paths``). Returns the validated spec.
     """
     if not isinstance(manifest, Mapping):
-        raise ContractError("gcd task manifest must be an object")
+        raise ContractError("ibex task manifest must be an object")
     for section in ("task", "config_surface", "fixed_design", "protected_paths"):
         if section not in manifest:
-            raise ContractError(f"gcd task manifest is missing section: {section!r}")
+            raise ContractError(
+                f"ibex task manifest is missing section: {section!r}"
+            )
 
     spec = TaskSpec.from_dict(manifest["task"])
-    if spec.task_id != GCD_TASK_ID:
+    if spec.task_id != IBEX_TASK_ID:
         raise ContractError(
-            f"manifest task_id {spec.task_id!r} != {GCD_TASK_ID!r}"
+            f"manifest task_id {spec.task_id!r} != {IBEX_TASK_ID!r}"
         )
-    if spec.task_version != GCD_TASK_VERSION:
+    if spec.task_version != IBEX_TASK_VERSION:
         raise ContractError(
-            f"manifest task_version {spec.task_version!r} != {GCD_TASK_VERSION!r}"
+            f"manifest task_version {spec.task_version!r} != {IBEX_TASK_VERSION!r}"
         )
     if list(spec.allowed_edit_paths) != [CANDIDATE_RELPATH]:
         raise ContractError(
@@ -381,12 +465,14 @@ def validate_manifest(manifest: Mapping[str, Any]) -> TaskSpec:
         raise ContractError("fixed_design must be an object")
     for field, expected in (
         ("design", FIXED_DESIGN),
+        ("design_name", FIXED_DESIGN_NAME),
         ("platform", FIXED_PLATFORM),
         ("orfs_commit", ORFS_COMMIT),
         ("image_pinned_ref", IMAGE_PINNED_REF),
         ("design_config", FIXED_DESIGN_CONFIG),
+        ("upstream_sdc", FIXED_UPSTREAM_SDC),
         ("sdc", FIXED_SDC),
-        ("endpoint", GCD_ENDPOINT),
+        ("endpoint", IBEX_ENDPOINT),
     ):
         if fixed.get(field) != expected:
             raise ContractError(
@@ -396,6 +482,10 @@ def validate_manifest(manifest: Mapping[str, Any]) -> TaskSpec:
     if fixed.get("clock_period_ns") != FIXED_CLOCK_PERIOD_NS:
         raise ContractError(
             f"fixed_design.clock_period_ns must be {FIXED_CLOCK_PERIOD_NS!r}"
+        )
+    if fixed.get("clock_name") != FIXED_CLOCK_NAME:
+        raise ContractError(
+            f"fixed_design.clock_name must be {FIXED_CLOCK_NAME!r}"
         )
     if list(fixed.get("rtl", [])) != list(FIXED_RTL):
         raise ContractError(f"fixed_design.rtl must be {list(FIXED_RTL)!r}")
@@ -442,20 +532,25 @@ __all__ = [
     "ENDPOINT",
     "FIXED_CLOCK_NAME",
     "FIXED_CLOCK_PERIOD_NS",
+    "FIXED_CLOCK_PORT",
     "FIXED_CORNERS",
     "FIXED_DESIGN",
     "FIXED_DESIGN_CONFIG",
+    "FIXED_DESIGN_NAME",
     "FIXED_LIB",
     "FIXED_PLATFORM",
     "FIXED_RTL",
     "FIXED_SDC",
-    "GCD_ENDPOINT",
-    "GCD_GRADER_ID",
-    "GCD_GRADER_VERSION",
-    "GCD_TASK_ID",
-    "GCD_TASK_VERSION",
+    "FIXED_SYNTH_HDL_FRONTEND",
+    "FIXED_UPSTREAM_SDC",
+    "FIXED_VERILOG_INCLUDE_DIRS",
     "GRADER_ID",
     "GRADER_VERSION",
+    "IBEX_ENDPOINT",
+    "IBEX_GRADER_ID",
+    "IBEX_GRADER_VERSION",
+    "IBEX_TASK_ID",
+    "IBEX_TASK_VERSION",
     "IMAGE_DIGEST",
     "IMAGE_PINNED_REF",
     "ORFS_COMMIT",
@@ -464,6 +559,7 @@ __all__ = [
     "PLACE_DENSITY_MIN",
     "PLACE_DENSITY_STOCK",
     "PROTECTED_ASSETS",
+    "REQUIRED_ASSETS",
     "SOURCE_REF",
     "TASK_DIR",
     "TASK_ID",
@@ -474,7 +570,7 @@ __all__ = [
     "dumps_candidate_json",
     "load_manifest_dict",
     "load_task_spec",
-    "make_gcd_task",
+    "make_ibex_task",
     "stock_candidate_config",
     "to_task_spec",
     "validate_candidate_config",

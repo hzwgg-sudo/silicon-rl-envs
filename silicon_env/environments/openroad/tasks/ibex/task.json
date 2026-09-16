@@ -1,0 +1,177 @@
+{
+  "config_surface": {
+    "bounds_note": "Bounds are task-supported safe ranges inside the ORFS semantic ranges (density 0-1, utilization 0-100 percent), recorded as supported by the pin. Only JSON numbers are accepted; strings (including Tcl/Make fragments) are rejected.",
+    "candidate_file": "candidate_ibex.json",
+    "knobs": {
+      "CORE_UTILIZATION": {
+        "max": 90.0,
+        "min": 20.0,
+        "source": "flow/designs/nangate45/ibex/config.mk: export CORE_UTILIZATION ?= 50 at pinned ORFS commit",
+        "stock": 50.0,
+        "unit": "percent"
+      },
+      "PLACE_DENSITY": {
+        "max": 0.8,
+        "min": 0.2,
+        "source": "flow/platforms/nangate45/config.mk: export PLACE_DENSITY ?= 0.30 at pinned ORFS commit (Ibex config.mk does not override; it only sets PLACE_DENSITY_LB_ADDON = 0.20)",
+        "stock": 0.3,
+        "unit": "fraction"
+      }
+    }
+  },
+  "fixed_design": {
+    "clock_name": "core_clock",
+    "clock_period_ns": 2.3,
+    "clock_port": "clk_i",
+    "corners": "typical (NangateOpenCellLibrary_typical.lib)",
+    "design": "ibex",
+    "design_config": "flow/designs/nangate45/ibex/config.mk",
+    "design_name": "ibex_core",
+    "endpoint": "final",
+    "endpoint_note": "Default make target: full flow through detailed route ending at final reports. Executed in M2-02+; this ticket defines the task only.",
+    "image_pinned_ref": "docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61",
+    "lib": "flow/platforms/nangate45/lib/NangateOpenCellLibrary_typical.lib",
+    "orfs_commit": "036d106273e66855cd5214d49518fd0f0df7de61",
+    "orfs_tag": "26Q2",
+    "platform": "nangate45",
+    "rtl": [
+      "flow/designs/src/ibex_sv/ibex_alu.sv",
+      "flow/designs/src/ibex_sv/ibex_compressed_decoder.sv",
+      "flow/designs/src/ibex_sv/ibex_controller.sv",
+      "flow/designs/src/ibex_sv/ibex_core.sv",
+      "flow/designs/src/ibex_sv/ibex_counter.sv",
+      "flow/designs/src/ibex_sv/ibex_cs_registers.sv",
+      "flow/designs/src/ibex_sv/ibex_csr.sv",
+      "flow/designs/src/ibex_sv/ibex_decoder.sv",
+      "flow/designs/src/ibex_sv/ibex_ex_block.sv",
+      "flow/designs/src/ibex_sv/ibex_fetch_fifo.sv",
+      "flow/designs/src/ibex_sv/ibex_id_stage.sv",
+      "flow/designs/src/ibex_sv/ibex_if_stage.sv",
+      "flow/designs/src/ibex_sv/ibex_load_store_unit.sv",
+      "flow/designs/src/ibex_sv/ibex_multdiv_fast.sv",
+      "flow/designs/src/ibex_sv/ibex_multdiv_slow.sv",
+      "flow/designs/src/ibex_sv/ibex_pkg.sv",
+      "flow/designs/src/ibex_sv/ibex_pmp.sv",
+      "flow/designs/src/ibex_sv/ibex_prefetch_buffer.sv",
+      "flow/designs/src/ibex_sv/ibex_register_file_ff.sv",
+      "flow/designs/src/ibex_sv/ibex_wb_stage.sv",
+      "flow/designs/src/ibex_sv/syn/rtl/prim_clock_gating.v"
+    ],
+    "rtl_note": "Mirrors VERILOG_FILES in flow/designs/nangate45/ibex/config.mk at the pinned commit: sort(wildcard $(DESIGN_HOME)/src/ibex_sv/*.sv) plus the synthesis shim $(DESIGN_HOME)/src/ibex_sv/syn/rtl/prim_clock_gating.v. The lowRISC prim vendor directory is a Verilog include dir (VERILOG_INCLUDE_DIRS), not a synthesised source; SYNTH_HDL_FRONTEND = slang.",
+    "sdc": "tasks/ibex/constraint.sdc",
+    "sdc_sha256": "10ad1493072c32bdad1c0a148f6eb38e0f33e1896ee265fe27537dc304a17892",
+    "synth_hdl_frontend": "slang",
+    "upstream_sdc": "flow/designs/nangate45/ibex/constraint.sdc",
+    "verilog_include_dirs": [
+      "flow/designs/src/ibex_sv/vendor/lowrisc_ip/prim/rtl/"
+    ]
+  },
+  "notes": "Task v0.2.0 fixes the clock at margined 2.30 ns after v0.1.0 stock violated setup by ~16 ps at the upstream 2.20 ns (measured run 35054041797: WNS -0.0159 ns / TNS -0.0315 ns, fmax 451.3 MHz i.e. 2.2158 ns min period). Mirrors the GCD v0.1.0->v0.2.0 precedent. Candidate clock edits remain forbidden; zero-negative-slack grading is unchanged.",
+  "protected_paths": [
+    "tasks/ibex/constraint.sdc",
+    "flow/designs/nangate45/ibex/constraint.sdc",
+    "flow/designs/nangate45/ibex/config.mk",
+    "flow/designs/src/ibex_sv/ibex_alu.sv",
+    "flow/designs/src/ibex_sv/ibex_compressed_decoder.sv",
+    "flow/designs/src/ibex_sv/ibex_controller.sv",
+    "flow/designs/src/ibex_sv/ibex_core.sv",
+    "flow/designs/src/ibex_sv/ibex_counter.sv",
+    "flow/designs/src/ibex_sv/ibex_cs_registers.sv",
+    "flow/designs/src/ibex_sv/ibex_csr.sv",
+    "flow/designs/src/ibex_sv/ibex_decoder.sv",
+    "flow/designs/src/ibex_sv/ibex_ex_block.sv",
+    "flow/designs/src/ibex_sv/ibex_fetch_fifo.sv",
+    "flow/designs/src/ibex_sv/ibex_id_stage.sv",
+    "flow/designs/src/ibex_sv/ibex_if_stage.sv",
+    "flow/designs/src/ibex_sv/ibex_load_store_unit.sv",
+    "flow/designs/src/ibex_sv/ibex_multdiv_fast.sv",
+    "flow/designs/src/ibex_sv/ibex_multdiv_slow.sv",
+    "flow/designs/src/ibex_sv/ibex_pkg.sv",
+    "flow/designs/src/ibex_sv/ibex_pmp.sv",
+    "flow/designs/src/ibex_sv/ibex_prefetch_buffer.sv",
+    "flow/designs/src/ibex_sv/ibex_register_file_ff.sv",
+    "flow/designs/src/ibex_sv/ibex_wb_stage.sv",
+    "flow/designs/src/ibex_sv/syn/rtl/prim_clock_gating.v",
+    "flow/platforms/nangate45/config.mk",
+    "flow/platforms/nangate45/lef/NangateOpenCellLibrary.tech.lef",
+    "flow/platforms/nangate45/lib/NangateOpenCellLibrary_typical.lib",
+    "reports/",
+    "results/"
+  ],
+  "required_assets": [
+    "flow/Makefile",
+    "flow/designs/nangate45/ibex/config.mk",
+    "flow/designs/nangate45/ibex/constraint.sdc",
+    "flow/designs/src/ibex_sv/ibex_alu.sv",
+    "flow/designs/src/ibex_sv/ibex_compressed_decoder.sv",
+    "flow/designs/src/ibex_sv/ibex_controller.sv",
+    "flow/designs/src/ibex_sv/ibex_core.sv",
+    "flow/designs/src/ibex_sv/ibex_counter.sv",
+    "flow/designs/src/ibex_sv/ibex_cs_registers.sv",
+    "flow/designs/src/ibex_sv/ibex_csr.sv",
+    "flow/designs/src/ibex_sv/ibex_decoder.sv",
+    "flow/designs/src/ibex_sv/ibex_ex_block.sv",
+    "flow/designs/src/ibex_sv/ibex_fetch_fifo.sv",
+    "flow/designs/src/ibex_sv/ibex_id_stage.sv",
+    "flow/designs/src/ibex_sv/ibex_if_stage.sv",
+    "flow/designs/src/ibex_sv/ibex_load_store_unit.sv",
+    "flow/designs/src/ibex_sv/ibex_multdiv_fast.sv",
+    "flow/designs/src/ibex_sv/ibex_multdiv_slow.sv",
+    "flow/designs/src/ibex_sv/ibex_pkg.sv",
+    "flow/designs/src/ibex_sv/ibex_pmp.sv",
+    "flow/designs/src/ibex_sv/ibex_prefetch_buffer.sv",
+    "flow/designs/src/ibex_sv/ibex_register_file_ff.sv",
+    "flow/designs/src/ibex_sv/ibex_wb_stage.sv",
+    "flow/designs/src/ibex_sv/syn/rtl/prim_clock_gating.v",
+    "flow/platforms/nangate45/config.mk",
+    "flow/platforms/nangate45/lef/NangateOpenCellLibrary.tech.lef",
+    "flow/platforms/nangate45/lib/NangateOpenCellLibrary_typical.lib"
+  ],
+  "resources": {
+    "budget_note": "7200 s wall-clock budget is an estimate for a full RISC-V core flow, informed but not confirmed by the v0.1.0 stock probe (1591 s wall at 2.20 ns, run 35054041797). M2-02's three-run qualification records peak RSS and confirms the budget at the v0.2.0 2.30 ns clock.",
+    "reference_run": {
+      "status": "TBD-unverified",
+      "notes": "v0.1.0 stock probe (run 35054041797, OR_SEED=0, NUM_CORES=1): final endpoint exit 0 in 1591 s wall, DRC 0, stdcell area 30029 um2, but setup WNS -0.0159 ns / TNS -0.0315 ns (4 violations) -- ~16 ps too tight for zero-slack scoring, which motivated the v0.2.0 2.30 ns clock. Peak RSS unrecorded (GNU-time file missed upload). Status stays TBD-unverified until M2-02's three-run v0.2.0 qualification (seeds 7/8/9) lands baseline.json."
+    },
+    "required_minimum": {
+      "cpus": 2,
+      "memory_gb": 4.0,
+      "notes": "Same preflight floor as the shared toolchain lock. Linux x86_64 only (pinned image is linux/amd64); Apple-silicon hosts must use the Linux container/VM route. 8+ CPUs / 16+ GiB recommended for real runs; to be confirmed by measurement in M2-02."
+    }
+  },
+  "schema_version": 1,
+  "task": {
+    "allowed_actions": [
+      "read_file",
+      "write_file",
+      "run_tool",
+      "submit",
+      "noop"
+    ],
+    "allowed_edit_paths": [
+      "candidate_ibex.json"
+    ],
+    "budgets": {
+      "max_steps": 10,
+      "max_tool_calls": 10,
+      "max_wallclock_s": 7200.0
+    },
+    "grader": {
+      "grader_id": "ibex-area-grader",
+      "grader_version": "0.1.0",
+      "required_metrics": [],
+      "timeout_s": 7200.0
+    },
+    "read_only": false,
+    "schema_version": 1,
+    "seed": 0,
+    "source_ref": "orfs:036d106273e66855cd5214d49518fd0f0df7de61:flow/designs/nangate45/ibex",
+    "task_id": "ibex-nangate45",
+    "task_version": "0.2.0",
+    "toolchain_refs": {
+      "orfs": "036d106273e66855cd5214d49518fd0f0df7de61",
+      "orfs-image": "docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61"
+    }
+  },
+  "ticket": "M2-01"
+}
