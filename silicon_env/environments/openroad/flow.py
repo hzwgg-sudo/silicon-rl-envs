@@ -420,8 +420,8 @@ def run_gcd_flow(
         "required_finals": list(required_finals),
         "optional_final_log": optional_log,
         "layout_verification": (
-            "source-verified, pending-linux-run: stage/final relpaths match ORFS 26Q2 "
-            "GCD contract; on-disk verification awaits a real pinned-image run"
+            "source-and-linux-verified: stage/final paths match ORFS 26Q2 GCD; "
+            "reference qualification run 34910380801"
         ),
     }
     if callable(getattr(runner, "provenance", None)):

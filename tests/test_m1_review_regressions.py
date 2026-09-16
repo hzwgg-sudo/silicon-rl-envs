@@ -62,6 +62,8 @@ def test_real_make_repeated_runs_are_isolated_and_parseable(checkout, tmp_path):
         parsed = parse_generated_reports(result)
         assert parsed.valid, parsed.reasons
         assert parsed.area_um2 == utilization
+        assert parsed.raw_refs["timing"].endswith("6_report.json")
+        assert parsed.raw_refs["area"].endswith("6_report.json")
         assert "NUM_CORES=1" in result.provenance["command_argv"]
         outputs.append(result.provenance["output_dir"])
     assert len(set(outputs)) == 3

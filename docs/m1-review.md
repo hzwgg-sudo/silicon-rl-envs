@@ -21,33 +21,35 @@ The original 437-passing-test suite did not establish a working real-tool path.
 | P2 | Unit conversion could overflow finite inputs into infinite metrics marked valid. | Reject overflow and keep serialized metrics finite. |
 | P2 | Built distributions omitted JSON task assets and scripts. | Include manifests, lockfile, baseline and evidence scripts; verify an installed wheel outside the source checkout. |
 
-The profile records elapsed time, but does **not** substitute host Docker-client
-RSS for actual EDA memory. Container peak RSS remains unmeasured.
-
 ## Verification
 
-- Full default suite: 455 passed, 13 opt-in EDA/container checks skipped.
-- Ruff and `git diff --check`: clean.
-- Shell wrapper syntax: checked with `bash -n`.
-- Distribution: wheel built and installed to a temporary directory; packaged
-  task manifest, lockfile and evidence hook loaded outside the repository.
-- Regressions include real Git and Make execution, source tampering, repeat-run
-  isolation, stale reports, failed-flow scoring, DRC/unconstrained evidence,
-  overflow, CLI baseline selection, agent timing feasibility and container
-  mount/profile construction. No mock result is presented as EDA evidence.
+- Default suite: 460 passed, 15 opt-in EDA/container checks skipped.
+- Ruff, `git diff --check`, shell wrapper syntax: clean.
+- Installed wheel: verified baseline, task, lockfile and packaged constraint
+  loaded outside the source checkout; constraint hash matches the lockfile.
 
-## Still required before M1 completion
+Task **v0.2.0**, with its approved fixed **0.60 ns** clock, passed
+[all six real Linux gate tests](https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34924691666). Stock seeds 7/8/9 matched exactly:
+area **679.63 um²**, WNS/TNS **0 ns**, DRC **0**, unconstrained endpoints **0**.
+Stock flow times were 101.77, 102.01 and 102.26 seconds; maximum GNU-time
+child RSS was 0.781 GiB under the 1 CPU/4 GiB container profile. This RSS
+measurement is not whole-cgroup memory.
 
-Run [the corrected quickstart](gcd-quickstart.md) or the manual integration
-workflow on Linux x86_64 with Docker. Actual image/tool compatibility, stock
-area/timing, successful zero-negative-slack grading, baseline repeatability,
-agent runs, semantic trace determinism and EDA RAM/runtime remain unverified.
-The new container adapter and final evidence hook also require that real run.
-Do not merge on the strength of the default suite alone or relax timing and
-tolerance gates to manufacture a pass.
+Three identical episodes shared one semantic trace hash and reward 0.5.
+Both scripted agents scored 0.5; bounded search used four probes and reported
+no improvement. The gate also passed forged-report rejection, budget
+exhaustion, legal/invalid edits, CLI execution and independent CLI regrading.
+The packaged baseline contains the measured three-run capture and tool versions.
 
-The container adapter copies the trusted flow tree per run; its disk/time cost
-is not yet measured. The public task seed controls detailed routing only.
+Additional real-run fixes preserve writable output-copy permissions while
+mounting the trusted SDC read-only, exclude variable resource tables from
+successful observations, compare structured area in the tamper test, and
+increase the default grading deadline beyond measured flow runtime.
+
+The final evidence/documentation commit changes diagnostic report references,
+not scoring or tool execution; the references are covered by local regression
+tests. The public seed controls detailed routing only. Native macOS EDA
+support is not claimed.
 
 ## Pinned source references
 
@@ -69,6 +71,8 @@ and baseline validation rejects every run that fails fixed task constraints.
 Binary versions and measured RSS/runtime are recorded in the lockfile and
 [m1-stock-qualification.json](m1-stock-qualification.json).
 
-The pending benchmark clock decision prevents a verified baseline and merge;
-the stock failure is never reclassified as success. Earlier TBD statements
-about binary probes and stock-flow execution are superseded by this evidence.
+The user approved task v0.2.0 with an immutable 0.60 ns clock and upstream
+20% IO delays. The zero-negative-slack grader is unchanged, and the packaged
+SDC content hash invalidates old baselines after constraint changes.
+Successful v0.2.0 evidence is archived in
+[m1-task-v0.2-qualification.json](m1-task-v0.2-qualification.json).

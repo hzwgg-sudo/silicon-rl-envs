@@ -4,15 +4,8 @@ name: openroad-integration
 # push/PR, so the default CI stays lightweight (no EDA/Docker/network).
 # Trigger from the Actions tab (workflow_dispatch) on a provisioned Linux
 # worker. See docs/gcd-quickstart.md for the full reset-to-grade flow.
-#
-# Real pinned-tool runs are blocked on the Mac dev host; this workflow is
-# the sanctioned Linux route. Until a provisioned run completes, the
-# measured RAM/runtime fields in docs stay TBD-unverified (never
-# fabricated).
 
 on:
-  push:
-    branches: [codex/m1-openroad-gcd] # temporary pre-merge qualification
   workflow_dispatch:
     inputs:
       seed:

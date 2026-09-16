@@ -1,7 +1,7 @@
 """Read only the pinned ORFS final reports from this invocation's output tree.
 
-ORFS 26Q2 scripts/report_metrics.tcl writes timing to 6_finish.rpt and
-report_design_area to stdout, captured by the 6_report.log make step.
+ORFS 26Q2 scripts/report_metrics.tcl writes full-precision metrics to
+6_report.json; rounded timing and area text remain required evidence.
 Routed completion comes from the adapter's fresh final artifacts and exit
 status, since upstream does not emit our synthetic completion marker.
 """
@@ -94,6 +94,7 @@ def parse_generated_reports(flow_result: Any) -> metrics.GcdMetrics:
     suffix = f"{gcd.FIXED_PLATFORM}/{gcd.FIXED_DESIGN}/default"
     return metrics.parse_flow_result(
         flow_result, **texts,
-        timing_ref=f"{root}/reports/{suffix}/6_finish.rpt",
-        area_ref=f"{root}/logs/{suffix}/6_report.log",
+        timing_ref=f"{root}/logs/{suffix}/6_report.json",
+        area_ref=f"{root}/logs/{suffix}/6_report.json",
+        drc_ref=f"{root}/logs/{suffix}/5_2_route.json",
     )

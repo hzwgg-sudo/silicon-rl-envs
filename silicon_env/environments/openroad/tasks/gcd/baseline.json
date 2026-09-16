@@ -34,7 +34,7 @@
       "yosys": "Yosys 0.63+post (git sha1 UNKNOWN-dirty, g++ 11.4.0-1ubuntu1~22.04.3 -fPIC -O3)"
     },
     "run_url": "https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34910380801",
-    "source_commit": "26d79a1",
+    "source_commit": "26d79a1247fad2462a6fd8eba8aa6eac828d5c4c",
     "artifact_id": 10375586141,
     "measured_on": "2026-09-14"
   },

@@ -87,13 +87,22 @@ pinned `gcd-nangate45` task: provision the Linux route (ORFS @
 `run_task` episode, independent regrade, verified baseline generation,
 and the opt-in release gate. No manual file edits are needed.
 
-Release-gate status: the real pinned-tool run is **blocked on the Mac
-dev host** (arm64/8 GB RAM, container daemon stopped, image is
-linux/amd64 only), so measured RAM/runtime stays `TBD-unverified`
-(never fabricated). The sanctioned Linux route is the manual
-`openroad-integration` workflow (workflow_dispatch only, single worker,
-7-day compact artifact retention), i.e.
-`SILICON_RUN_GCD_E2E=1 pytest tests/integration/test_gcd_e2e.py`.
+Task **v0.2.0**, with its approved fixed **0.60 ns** clock, passed
+[all six real Linux gate tests](https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34924691666). Stock seeds 7/8/9 matched exactly:
+area **679.63 um²**, WNS/TNS **0 ns**, DRC **0**, unconstrained endpoints **0**.
+Stock flow times were 101.77, 102.01 and 102.26 seconds; maximum GNU-time
+child RSS was 0.781 GiB under the 1 CPU/4 GiB container profile. This RSS
+measurement is not whole-cgroup memory.
+
+Three identical episodes shared one semantic trace hash and reward 0.5.
+Both scripted agents scored 0.5; bounded search used four probes and reported
+no improvement. The gate also passed forged-report rejection, budget
+exhaustion, legal/invalid edits, CLI execution and independent CLI regrading.
+The packaged baseline contains the measured three-run capture and tool versions.
+
+Reproduce via the manual `openroad-integration` workflow or the quickstart.
+Compact Actions artifacts are retained for seven days; key measurements and
+trace hashes are also archived in the repository.
 The same gate logic runs with fakes in the default fast suite (no
 EDA/Docker/network): `pytest tests/test_gcd_release_gate.py`.
 

@@ -1,0 +1,161 @@
+{
+  "task_id": "gcd-nangate45",
+  "task_version": "0.2.0",
+  "clock_period_ns": 0.6,
+  "source_commit": "26d79a1247fad2462a6fd8eba8aa6eac828d5c4c",
+  "run_url": "https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34910380801",
+  "artifact_id": 10375586141,
+  "episodes": [
+    {
+      "episode": "ep0",
+      "semantic_hash": "425caed671afa551473a08bcd0b4115b80c8746c9a130218e8336ad82ee52923",
+      "grade": {
+        "status": "pass",
+        "passed": true,
+        "score": 0.5,
+        "metrics": [
+          {
+            "name": "cell_area",
+            "unit": "um^2",
+            "value": 679.63
+          },
+          {
+            "name": "wns",
+            "unit": "ns",
+            "value": 0.0
+          },
+          {
+            "name": "tns",
+            "unit": "ns",
+            "value": 0.0
+          },
+          {
+            "name": "reward",
+            "unit": "score",
+            "value": 0.5
+          },
+          {
+            "name": "area_delta",
+            "unit": "um^2",
+            "value": 0.0
+          }
+        ]
+      }
+    },
+    {
+      "episode": "ep1",
+      "semantic_hash": "425caed671afa551473a08bcd0b4115b80c8746c9a130218e8336ad82ee52923",
+      "grade": {
+        "status": "pass",
+        "passed": true,
+        "score": 0.5,
+        "metrics": [
+          {
+            "name": "cell_area",
+            "unit": "um^2",
+            "value": 679.63
+          },
+          {
+            "name": "wns",
+            "unit": "ns",
+            "value": 0.0
+          },
+          {
+            "name": "tns",
+            "unit": "ns",
+            "value": 0.0
+          },
+          {
+            "name": "reward",
+            "unit": "score",
+            "value": 0.5
+          },
+          {
+            "name": "area_delta",
+            "unit": "um^2",
+            "value": 0.0
+          }
+        ]
+      }
+    },
+    {
+      "episode": "ep2",
+      "semantic_hash": "425caed671afa551473a08bcd0b4115b80c8746c9a130218e8336ad82ee52923",
+      "grade": {
+        "status": "pass",
+        "passed": true,
+        "score": 0.5,
+        "metrics": [
+          {
+            "name": "cell_area",
+            "unit": "um^2",
+            "value": 679.63
+          },
+          {
+            "name": "wns",
+            "unit": "ns",
+            "value": 0.0
+          },
+          {
+            "name": "tns",
+            "unit": "ns",
+            "value": 0.0
+          },
+          {
+            "name": "reward",
+            "unit": "score",
+            "value": 0.5
+          },
+          {
+            "name": "area_delta",
+            "unit": "um^2",
+            "value": 0.0
+          }
+        ]
+      }
+    }
+  ],
+  "agents": {
+    "noop": {
+      "score": 0.5,
+      "actions": [
+        "read_file:candidate.json",
+        "submit"
+      ]
+    },
+    "search": {
+      "score": 0.5,
+      "actions": [
+        "write_file:0",
+        "run_tool:0",
+        "write_file:1",
+        "run_tool:1",
+        "write_file:2",
+        "run_tool:2",
+        "write_file:3",
+        "run_tool:3",
+        "write_file:best-0",
+        "submit"
+      ],
+      "improved": false,
+      "candidate": {
+        "PLACE_DENSITY": 0.3,
+        "CORE_UTILIZATION": 55.0
+      }
+    }
+  },
+  "baseline": "../silicon_env/environments/openroad/tasks/gcd/baseline.json",
+  "initial_gate": {
+    "passed": 5,
+    "failed": 1,
+    "failure": "Historical assertion matched evaluator version 0.1.0. Corrected to compare measured area; final gate passed."
+  },
+  "final_gate": {
+    "run_url": "https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34924691666",
+    "source_commit": "3c51fb61521090b233894eeafdaaa4086993d8cf",
+    "artifact_id": 10379743466,
+    "passed": 6,
+    "failed": 0,
+    "duration_s": 1905.36
+  }
+}

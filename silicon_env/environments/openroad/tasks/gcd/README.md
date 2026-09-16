@@ -13,8 +13,7 @@ without changing function or timing constraints.
   input/output delay ratios and replaces the timing-infeasible 0.46 ns target.
 - RTL `flow/designs/src/gcd/gcd.v` (immutable).
 - Corners: typical (`NangateOpenCellLibrary_typical.lib`).
-- Endpoint: `final` (default `make` target through detailed route to final
-  reports; executed in M1-03, defined here only).
+- Endpoint: `final`, through detailed route and final reports.
 
 Full pin details live in `../../toolchain.lock.json`.
 
@@ -66,11 +65,11 @@ A candidate cannot relax the clock or alter RTL through the allowed
 interface: the clock period, SDC path, RTL paths, library paths, and
 endpoint are fixed facts in `task.json` (`fixed_design`) and in
 `config.py` (`FIXED_*`), while `allowed_edit_paths` covers only
-`candidate.json`. Protected assets are listed in `PROTECTED_ASSETS`
-(hash groundwork for later tickets; no flow/metrics/grader here).
+`candidate.json`. Protected assets and fixed design facts participate in
+the baseline fingerprint, including the packaged SDC content hash.
 
-## Out of scope
+## Execution
 
-Real-tool execution, metrics, and the grader land in M1-03+. A real
-pinned-tool run was not attempted for this ticket (dev host constraints);
-default tests are lightweight (no EDA/Docker/network/keys).
+Follow [the quickstart](../../../../../docs/gcd-quickstart.md) for the
+qualified Linux container profile, measured baseline, CLI episode and
+independent regrading. Default tests remain lightweight (no EDA required).

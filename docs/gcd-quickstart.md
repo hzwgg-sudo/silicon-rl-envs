@@ -1,8 +1,17 @@
 # GCD deterministic quickstart
 
-M1's real-tool release gate is **not yet verified**. The host commands below launch
-flows inside the pinned Linux amd64 image. Pulling the image alone does not put
-EDA tools on the host. Do not interpret the default unit tests as a GCD run.
+Task **v0.2.0**, with its approved fixed **0.60 ns** clock, passed
+[all six real Linux gate tests](https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34924691666). Stock seeds 7/8/9 matched exactly:
+area **679.63 um²**, WNS/TNS **0 ns**, DRC **0**, unconstrained endpoints **0**.
+Stock flow times were 101.77, 102.01 and 102.26 seconds; maximum GNU-time
+child RSS was 0.781 GiB under the 1 CPU/4 GiB container profile. This RSS
+measurement is not whole-cgroup memory.
+
+Three identical episodes shared one semantic trace hash and reward 0.5.
+Both scripted agents scored 0.5; bounded search used four probes and reported
+no improvement. The gate also passed forged-report rejection, budget
+exhaustion, legal/invalid edits, CLI execution and independent CLI regrading.
+The packaged baseline contains the measured three-run capture and tool versions.
 
 ## 0. Prepare a Linux x86_64 host
 
@@ -31,7 +40,8 @@ original source checkout and Docker socket are never mounted.
 
 The source checkout pins flow inputs; tools come from the digest-pinned
 image. Preflight rejects a wrong Git revision or modified/extra flow inputs.
-Source-copy disk overhead and actual EDA peak memory remain unmeasured.
+The flow copies trusted sources into a disposable directory for each run.
+Resource evidence records GNU-time maximum child RSS, not whole-cgroup memory.
 
 ## 1. Preflight and baseline (before scoring)
 
@@ -45,8 +55,8 @@ export SILICON_GCD_BASELINE="$PWD/gcd-evidence/baseline.json"
 
 Baseline generation performs three independent stock runs. Every invocation
 has its own `WORK_HOME`, final artifacts, and reports. The record includes
-probed tool versions and total elapsed time. EDA peak RSS stays unknown until
-measured inside the container; Docker-client RSS is not substituted. Generation fails
+probed tool versions, total elapsed time and maximum child RSS measured inside
+the container; Docker-client RSS is not substituted. Generation fails
 closed on invalid metrics or drift. A verified baseline measures the stock
 reference; it does not waive the grader's zero-negative-slack and correctness
 gates. No measured stock timing or reward is promised before this runs.
@@ -79,8 +89,8 @@ cat gcd-evidence/episode/summary.json
 python scripts/grade_task.py --submission-dir gcd-evidence/episode
 ```
 
-Both CLI commands honor `SILICON_GCD_BASELINE`. The default packaged record
-is intentionally unverified and cannot score. Output directories must be
+Both CLI commands honor `SILICON_GCD_BASELINE`. The packaged record is
+verified for task v0.2.0. Output directories must be
 fresh. Exit codes: `0` pass, `2` invalid submission/grading failure,
 `3` infrastructure/usage failure.
 
@@ -107,8 +117,10 @@ It retains the baseline and compact traces/manifests for seven days.
 
 Paths under each invocation's `outputs/`:
 
-- `reports/nangate45/gcd/default/6_finish.rpt`: final WNS/TNS.
-- `logs/nangate45/gcd/default/6_report.log`: final design cell area.
+- `logs/nangate45/gcd/default/6_report.json`: full-precision final WNS/TNS
+  and standard-cell area.
+- `reports/nangate45/gcd/default/6_finish.rpt` and
+  `logs/nangate45/gcd/default/6_report.log`: required final report evidence.
 - `logs/nangate45/gcd/default/5_2_route.json`: routed DRC count.
 - `reports/nangate45/gcd/default/6_unconstrained.rpt`: the trusted final
   hook's OpenSTA unconstrained-endpoint check.
@@ -118,7 +130,8 @@ Missing, stale, malformed or failed-flow evidence cannot yield a passing
 grade. Report paths and commands were checked against the pinned upstream
 source, including [ORFS report generation](https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts/blob/036d106273e66855cd5214d49518fd0f0df7de61/flow/scripts/report_metrics.tcl)
 and [OpenSTA setup checks](https://github.com/The-OpenROAD-Project/OpenSTA/blob/43177bba8f5f88dfb7dc35795242080a4fe2e986/search/Search.tcl).
-They still require a real pinned-image run.
+Real pinned-image reports are regression fixtures in
+`tests/fixtures/openroad/real-26Q2`.
 
 ## Qualification status
 
@@ -126,7 +139,7 @@ They still require a real pinned-image run.
 completed stock routing three times with identical metrics: area 903.336 um²,
 WNS −0.04544 ns, TNS −0.737691 ns, DRC 0, unconstrained endpoints 0.
 The fixed 0.46 ns task therefore fails timing and cannot produce an approved
-baseline. The release gate remains blocked on benchmark feasibility.
+baseline for task v0.1.0; these historical measurements do not describe v0.2.0.
 
 OpenROAD/Yosys versions are now probed and pinned. Stock end-to-end flow
 elapsed times were 82.58, 83.67 and 83.21 seconds. Maximum GNU-time child RSS
@@ -136,5 +149,8 @@ memory cap. See [the measured qualification record](m1-stock-qualification.json)
 The production parser uses full-precision `6_report.json` timing and standard
 cell area; rounded text must not conceal small negative slack. Real reports
 are retained in `tests/fixtures/openroad/real-26Q2` for regression tests.
-A benchmark-specification decision is required before changing the pinned
-clock target; the zero-negative-slack grader has not been relaxed.
+The approved task v0.2.0 changes the immutable clock to 0.60 ns, preserving
+upstream 20% input/output delays. The zero-negative-slack grader is unchanged.
+The packaged SDC content hash participates in baseline validation.
+
+See [the durable qualification record](m1-task-v0.2-qualification.json).

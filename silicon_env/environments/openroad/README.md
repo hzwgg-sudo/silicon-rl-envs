@@ -3,12 +3,12 @@
 For executable container setup and scoring instructions, use
 [the GCD quickstart](../../../docs/gcd-quickstart.md). Every flow now uses
 its own WORK_HOME output tree and the production evaluator reads the pinned
-final report paths automatically. The real EDA gate remains unverified.
+final report paths automatically. See the quickstart for current qualification evidence.
 
 
 Pinned, deterministic execution profile for the scored GCD/nangate45 flow.
-Ticket M1-01. This directory holds the immutable pin; later M1 tickets
-(task config, flow, metrics, grader, env) build on it.
+This directory includes the immutable pin, task configuration, flow adapter,
+metrics reader, grader and environment.
 
 ## Files
 
@@ -33,10 +33,8 @@ records the reproducible container profile.
   `sha256:7832ae88…47b61` (linux/amd64).
 - No floating refs anywhere in scored inputs: the lockfile validator
   rejects floating tags in `orfs.*`, `sources.*`, and `image.*`.
-- Binary versions (`openroad -version`, `yosys -V`) and reference-run
-  RAM/time are **TBD-unverified**: only values from a real pinned-image
-  run may fill them in. The preflight warns on these entries instead of
-  passing silently.
+- Binary versions were probed inside the pinned image on Linux and are
+  recorded in the lockfile; preflight checks subsequent probes against them.
 
 ## Single-worker defaults
 
@@ -58,77 +56,34 @@ python scripts/check_openroad.py --help
 Unit tests inject fake tool probes, fake arches, and synthetic ORFS
 checkouts under `tmp_path`.
 
-## Linux route for actual EDA runs (requires a real Linux x86_64 host)
+## Linux execution and qualification
 
-```bash
-# 1. Fetch the pinned checkout (full history not required for scoring).
-git clone https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts.git orfs
-git -C orfs checkout 036d106273e66855cd5214d49518fd0f0df7de61
+Follow [the GCD quickstart](../../../docs/gcd-quickstart.md) for preflight,
+three fresh baseline runs, an episode, independent regrading and the release
+gate. All flow invocations use the restricted container adapter; pulling the
+image alone does not install tools on the host.
 
-# 2. Pull the pinned image by digest (never by floating tag).
-docker pull docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61
+Task v0.2.0 uses the approved immutable 0.60 ns constraint. The upstream
+0.46 ns stock design failed timing on the pinned tools; its measurements
+remain in [the historical record](../../../docs/m1-stock-qualification.json).
+The zero-negative-slack grader is unchanged.
 
-# 3. Gate, then run the reference GCD flow (single worker).
-ORFS_CHECKOUT=/path/to/orfs python scripts/check_openroad.py \
-    --orfs-checkout /path/to/orfs
-make -C /path/to/orfs/flow DESIGN_CONFIG=./designs/nangate45/gcd/config.mk
-```
-
-Record the measured `openroad -version` / `yosys -V` output and the
-peak RAM + wallclock into `toolchain.lock.json` (`tools.*.version`,
-`resources.reference_run`) — that update is owned by a later ticket once
-a real run exists.
-
-## Reference-run resources: TBD (not promised)
-
-| Metric | Value | Status |
-| ------ | ----- | ------ |
-| peak RAM | unknown | TBD — measure on Linux route |
-| wallclock | unknown | TBD — measure on Linux route |
-| machine | none yet | TBD |
-
-8 GB Mac support is **not** claimed. The dev host (Mac arm64, 8 GB RAM,
-container daemon stopped) cannot run this profile, so no pull, build, or
-flow run was attempted here.
-
-## Reference baseline: TBD-unverified (M1-05, blocked on Mac)
-
-`tasks/gcd/baseline.json` is an honest **TBD-unverified placeholder**:
-null metrics, provisional tight tolerances (`area_rel 0.01`,
-`wns_abs_ns 0.005 ns`, `tns_abs_ns 0.01 ns`), and the exact
-reproduction command — no measured values are fabricated.
-`baseline.py:validate_baseline` rejects it for scoring use (fail
-closed); any source/config/toolchain change invalidates a verified
-record via the input/tool fingerprint (pins + stock-candidate hash +
-protected-asset hash; runtimes/timestamps never participate).
-
-Baseline procedure (Linux route; blocked on the Mac dev host, which
-cannot run the linux/amd64 pinned image):
+`tasks/gcd/baseline.json` must pass `baseline.validate_baseline` before
+scoring. The fingerprint covers tool/source pins, stock parameters, fixed
+design facts and the packaged SDC content hash. Changed inputs invalidate
+old baselines. Generate a replacement using:
 
 ```bash
 python scripts/generate_openroad_baseline.py \
     --orfs-checkout /path/to/orfs \
-    --output silicon_env/environments/openroad/tasks/gcd/baseline.json \
-    --seed 0 --timeout-s 7200
+    --output /tmp/gcd-baseline.json --work-parent /tmp/gcd-baseline-runs \
+    --seed 7 --timeout-s 7200
 ```
 
-The generator runs the stock candidate three times in fresh scratch
-workspaces under the identical pinned profile, requires all runs
-valid and within tolerances, writes the record atomically, and
-records measured wallclock/peak-RSS. It exits nonzero on validity
-failure or metric drift and writes nothing in that case. Default
-tests (`tests/test_openroad_baseline.py`) inject fakes and need no
-EDA/Docker/network/keys.
-
-## Verification status (2026-09-14, Mac arm64/8GB, daemon stopped)
-
-- `git ls-remote` + GitHub API: ORFS tag `26Q2` -> commit `036d1062…`,
-  tool gitlinks, Docker Hub digest `sha256:7832ae88…` — all real,
-  recorded above.
-- `docker info`: daemon unreachable (`no such file or directory` for the
-  socket) — image pull / version probe **blocked**, recorded in the
-  lockfile `verification` section rather than fabricated.
-- `pytest`, `ruff`, `git diff --check`: see the ticket report.
+The generator rejects invalid, timing-infeasible or drifting runs. Resource
+records distinguish elapsed flow time and GNU-time maximum child RSS from
+whole-container memory. The enforced profile is 1 CPU and 4 GiB memory;
+native Apple-silicon execution is unsupported.
 
 ## Scripted GCD baselines (M1-09)
 
@@ -163,10 +118,8 @@ inject fake flow backends and need no EDA/Docker/network/keys.
 ```
 
 Real pinned runs of both agents are opt-in and skipped by default
-(`SILICON_RUN_OPENROAD_ENV=1` plus `ORFS_CHECKOUT` at the pinned
-commit on the Linux route); improvement over stock is recorded, not
-required. Blocked on the Mac dev host (arm64, container daemon
-stopped), which cannot run the linux/amd64 pinned image.
+(`SILICON_RUN_GCD_E2E=1` plus `ORFS_CHECKOUT` at the pinned
+commit on Linux); improvement over stock is recorded, not required.
 
 ## Non-goals
 

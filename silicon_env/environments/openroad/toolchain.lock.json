@@ -143,11 +143,11 @@
     }
   },
   "verification": {
-    "status": "stock-and-five-gates-verified-final-gate-rerun-pending",
-    "blocked_reason": "Only the tamper test string assertion failed by matching evaluator version 0.1.0; corrected assertion awaits rerun.",
-    "checked_on": "2026-09-14",
+    "status": "verified",
+    "blocked_reason": null,
+    "checked_on": "2026-09-15",
     "checked_host": "GitHub ubuntu-24.04 x86_64",
-    "run_url": "https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34910380801"
+    "run_url": "https://github.com/hzwgg-sudo/silicon-rl-envs/actions/runs/34924691666"
   },
   "licenses": {
     "orfs": "BSD-3-Clause (upstream)",
