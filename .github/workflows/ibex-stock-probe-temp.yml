@@ -60,31 +60,44 @@ jobs:
 
       - name: Probe tool versions in pinned image
         run: |
-          docker run --rm --pull never "$ORFS_IMAGE" openroad -version 2>&1 | head -3
-          docker run --rm --pull never "$ORFS_IMAGE" yosys -V 2>&1 | head -3
+          docker run --rm --pull never --user "$(id -u):$(id -g)" "$ORFS_IMAGE" /OpenROAD-flow-scripts/tools/install/OpenROAD/bin/openroad -version 2>&1 | head -3
+          docker run --rm --pull never --user "$(id -u):$(id -g)" "$ORFS_IMAGE" /OpenROAD-flow-scripts/tools/install/yosys/bin/yosys -V 2>&1 | head -3
 
       - name: Run one stock Ibex flow (fresh WORK_HOME, measured)
         run: |
           set -euo pipefail
-          mkdir -p /tmp/ibex-stock/outputs /tmp/ibex-stock/work
+          # Disposable WRITABLE copy (pristine checkout stays untouched for
+          # fingerprinting); mirrors the GCD runner's copies-only model.
+          # --read-only rootfs + writable /tmp + /scratch tmpfs + HOME=/tmp,
+          # workdir on the writable copy (slang/yosys create scratch files).
+          rm -rf /tmp/ibex-stock/flow-copy /tmp/ibex-stock/outputs
+          mkdir -p /tmp/ibex-stock/outputs
+          cp -a "$GITHUB_WORKSPACE/orfs/flow" /tmp/ibex-stock/flow-copy
+          chmod -R u+w /tmp/ibex-stock/flow-copy
           START=$(date +%s)
-          /usr/bin/time -v docker run --rm \
+          docker run --rm \
             --pull never \
             --network none \
             --user "$(id -u):$(id -g)" \
             --read-only \
             --cap-drop ALL \
+            --security-opt no-new-privileges \
             --cpus 4 \
             --memory 16g \
+            --memory-swap 16g \
+            --pids-limit 512 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=1g \
+            --tmpfs /scratch:rw,nosuid,nodev,exec,size=1g \
             -e FLOW_VARIANT=default \
             -e NUM_CORES=1 \
             -e OR_SEED=0 \
             -e OMP_NUM_THREADS=1 \
-            -v "$GITHUB_WORKSPACE/orfs/flow:/OpenROAD-flow-scripts/flow:ro" \
-            -v /tmp/ibex-stock/outputs:/scratch/outputs \
-            -w /OpenROAD-flow-scripts/flow \
+            -e HOME=/tmp \
+            -v /tmp/ibex-stock/flow-copy:/flow:rw \
+            -v /tmp/ibex-stock/outputs:/outputs:rw \
+            -w /flow \
             "$ORFS_IMAGE" \
-            make DESIGN_CONFIG=./designs/nangate45/ibex/config.mk WORK_HOME=/scratch/outputs 2>&1 | tee /tmp/ibex-stock/flow-console.log
+            /usr/bin/time -v -o /outputs/resources-time.txt make DESIGN_CONFIG=./designs/nangate45/ibex/config.mk WORK_HOME=/outputs 2>&1 | tee /tmp/ibex-stock/flow-console.log
           END=$(date +%s)
           echo "wallclock_s=$((END-START))" | tee /tmp/ibex-stock/resources.txt
           echo "flow exit: ${PIPESTATUS[0]}"
