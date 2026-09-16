@@ -1,0 +1,113 @@
+name: ibex-stock-probe-temp
+
+# TEMPORARY M2-01 probe: one stock Ibex/nangate45 flow at the pinned pin to
+# satisfy #20 real-tool acceptance. Manual only; DELETE before M2 close
+# (M2-04 adds the permanent opt-in gate). Not referenced by default CI.
+# Trigger from the Actions tab (workflow_dispatch) on branch codex/m2-ibex.
+
+on:
+  workflow_dispatch:
+    inputs:
+      flow_timeout_s:
+        description: "Per-run flow deadline in seconds"
+        required: false
+        default: "7200"
+
+concurrency:
+  group: ibex-stock-probe-temp
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ibex-stock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      ORFS_COMMIT: "036d106273e66855cd5214d49518fd0f0df7de61"
+      ORFS_REPO: "https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts"
+      ORFS_IMAGE: "docker.io/openroad/orfs:26Q2@sha256:7832ae885e62933fcbfc486fbd9133f8c3bd1206d15c96e93bfad97432947b61"
+      FLOW_TIMEOUT_S: ${{ inputs.flow_timeout_s || '7200' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/m2-ibex
+
+      - name: Check out pinned ORFS commit (shallow)
+        run: |
+          git init orfs
+          git -C orfs remote add origin "$ORFS_REPO"
+          git -C orfs fetch --depth 1 origin "$ORFS_COMMIT"
+          git -C orfs checkout "$ORFS_COMMIT"
+
+      - name: Verify Ibex required assets exist at pin
+        run: |
+          set -euo pipefail
+          for f in flow/Makefile flow/designs/nangate45/ibex/config.mk flow/designs/nangate45/ibex/constraint.sdc flow/platforms/nangate45/config.mk; do
+            test -f "orfs/$f" || { echo "MISSING: $f"; exit 1; }
+          done
+          ls orfs/flow/designs/src/ibex_sv/*.sv | head -25
+          test -f orfs/flow/designs/src/ibex_sv/syn/rtl/prim_clock_gating.v || { echo "MISSING shim"; exit 1; }
+          git -C orfs rev-parse HEAD
+          echo "assets ok"
+
+      - name: Pull pinned runtime image
+        run: docker pull "$ORFS_IMAGE"
+
+      - name: Probe tool versions in pinned image
+        run: |
+          docker run --rm --pull never "$ORFS_IMAGE" openroad -version 2>&1 | head -3
+          docker run --rm --pull never "$ORFS_IMAGE" yosys -V 2>&1 | head -3
+
+      - name: Run one stock Ibex flow (fresh WORK_HOME, measured)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ibex-stock/outputs /tmp/ibex-stock/work
+          START=$(date +%s)
+          /usr/bin/time -v docker run --rm \
+            --pull never \
+            --network none \
+            --user "$(id -u):$(id -g)" \
+            --read-only \
+            --cap-drop ALL \
+            --cpus 4 \
+            --memory 16g \
+            -e FLOW_VARIANT=default \
+            -e NUM_CORES=1 \
+            -e OR_SEED=0 \
+            -e OMP_NUM_THREADS=1 \
+            -v "$GITHUB_WORKSPACE/orfs/flow:/OpenROAD-flow-scripts/flow:ro" \
+            -v /tmp/ibex-stock/outputs:/scratch/outputs \
+            -w /OpenROAD-flow-scripts/flow \
+            "$ORFS_IMAGE" \
+            make DESIGN_CONFIG=./designs/nangate45/ibex/config.mk WORK_HOME=/scratch/outputs 2>&1 | tee /tmp/ibex-stock/flow-console.log
+          END=$(date +%s)
+          echo "wallclock_s=$((END-START))" | tee /tmp/ibex-stock/resources.txt
+          echo "flow exit: ${PIPESTATUS[0]}"
+
+      - name: Verify final endpoint evidence
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/ibex-stock/outputs
+          find "$ROOT" -maxdepth 6 -name "6_report.json" | head
+          RPT=$(find "$ROOT" -name "6_report.json" | head -1)
+          test -n "$RPT" || { echo "NO 6_report.json"; exit 1; }
+          python3 -c "import json; d=json.load(open('$RPT')); print(json.dumps(d, indent=1)[:2000])"
+          FIN=$(find "$ROOT" -name "6_final.def" | head -1)
+          test -n "$FIN" || { echo "NO 6_final.def"; exit 1; }
+          echo "endpoint evidence ok"
+
+      - name: Upload compact probe artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ibex-stock-probe
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            /tmp/ibex-stock/resources.txt
+            /tmp/ibex-stock/flow-console.log
+            /tmp/ibex-stock/outputs/**/6_report.json
+            /tmp/ibex-stock/outputs/**/6_finish.rpt
+            /tmp/ibex-stock/outputs/**/5_2_route.json
