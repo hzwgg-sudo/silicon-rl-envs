@@ -6,6 +6,9 @@ name: ibex-stock-probe-temp
 # Trigger from the Actions tab (workflow_dispatch) on branch codex/m2-ibex.
 
 on:
+  push:
+    branches: [codex/m2-ibex]
+    paths: [.github/workflows/ibex-stock-probe-temp.yml]
   workflow_dispatch:
     inputs:
       flow_timeout_s:
