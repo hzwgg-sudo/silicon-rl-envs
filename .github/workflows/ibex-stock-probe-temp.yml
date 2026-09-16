@@ -1,9 +1,9 @@
 name: ibex-stock-probe-temp
 
-# TEMPORARY M2-01 probe: one stock Ibex/nangate45 flow at the pinned pin to
-# satisfy #20 real-tool acceptance. Manual only; DELETE before M2 close
-# (M2-04 adds the permanent opt-in gate). Not referenced by default CI.
-# Trigger from the Actions tab (workflow_dispatch) on branch codex/m2-ibex.
+# TEMPORARY M2 probe: Ibex/nangate45 real-tool qualification at the pinned
+# pin. DELETE before M2 close (M2-04 adds the permanent opt-in gate).
+# Not referenced by default CI; runs only on pushes to codex/m2-ibex
+# touching this file.
 
 on:
   push:
@@ -24,7 +24,7 @@ permissions:
   contents: read
 
 jobs:
-  ibex-stock:
+  ibex-baseline:
     runs-on: ubuntu-latest
     timeout-minutes: 300
     env:
@@ -37,6 +37,13 @@ jobs:
         with:
           ref: codex/m2-ibex
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install package with dev extras
+        run: pip install -e .[dev]
+
       - name: Check out pinned ORFS commit (shallow)
         run: |
           git init orfs
@@ -44,86 +51,72 @@ jobs:
           git -C orfs fetch --depth 1 origin "$ORFS_COMMIT"
           git -C orfs checkout "$ORFS_COMMIT"
 
-      - name: Verify Ibex required assets exist at pin
-        run: |
-          set -euo pipefail
-          for f in flow/Makefile flow/designs/nangate45/ibex/config.mk flow/designs/nangate45/ibex/constraint.sdc flow/platforms/nangate45/config.mk; do
-            test -f "orfs/$f" || { echo "MISSING: $f"; exit 1; }
-          done
-          ls orfs/flow/designs/src/ibex_sv/*.sv | head -25
-          test -f orfs/flow/designs/src/ibex_sv/syn/rtl/prim_clock_gating.v || { echo "MISSING shim"; exit 1; }
-          git -C orfs rev-parse HEAD
-          echo "assets ok"
-
       - name: Pull pinned runtime image
         run: docker pull "$ORFS_IMAGE"
 
-      - name: Probe tool versions in pinned image
+      - name: Preflight gate (shared lock) + Ibex asset check
         run: |
-          docker run --rm --pull never --user "$(id -u):$(id -g)" "$ORFS_IMAGE" /OpenROAD-flow-scripts/tools/install/OpenROAD/bin/openroad -version 2>&1 | head -3
-          docker run --rm --pull never --user "$(id -u):$(id -g)" "$ORFS_IMAGE" /OpenROAD-flow-scripts/tools/install/yosys/bin/yosys -V 2>&1 | head -3
+          python scripts/check_openroad.py --orfs-checkout "$GITHUB_WORKSPACE/orfs"
+          python -c "
+          from scripts.generate_openroad_baseline import check_ibex_checkout
+          print('ibex assets ok:', check_ibex_checkout('$GITHUB_WORKSPACE/orfs'))
+          "
 
-      - name: Run one stock Ibex flow (fresh WORK_HOME, measured)
+      - name: Generate verified Ibex baseline (stock x3, seeds 7/8/9)
         run: |
-          set -euo pipefail
-          # Disposable WRITABLE copy (pristine checkout stays untouched for
-          # fingerprinting); mirrors the GCD runner's copies-only model.
-          # --read-only rootfs + writable /tmp + /scratch tmpfs + HOME=/tmp,
-          # workdir on the writable copy (slang/yosys create scratch files).
-          rm -rf /tmp/ibex-stock/flow-copy /tmp/ibex-stock/outputs
-          mkdir -p /tmp/ibex-stock/outputs
-          cp -a "$GITHUB_WORKSPACE/orfs/flow" /tmp/ibex-stock/flow-copy
-          chmod -R u+w /tmp/ibex-stock/flow-copy
-          START=$(date +%s)
-          docker run --rm \
-            --pull never \
-            --network none \
-            --user "$(id -u):$(id -g)" \
-            --read-only \
-            --cap-drop ALL \
-            --security-opt no-new-privileges \
-            --cpus 4 \
-            --memory 16g \
-            --memory-swap 16g \
-            --pids-limit 512 \
-            --tmpfs /tmp:rw,nosuid,nodev,size=1g \
-            --tmpfs /scratch:rw,nosuid,nodev,exec,size=1g \
-            -e FLOW_VARIANT=default \
-            -e NUM_CORES=1 \
-            -e OR_SEED=0 \
-            -e OMP_NUM_THREADS=1 \
-            -e HOME=/tmp \
-            -v /tmp/ibex-stock/flow-copy:/flow:rw \
-            -v /tmp/ibex-stock/outputs:/outputs:rw \
-            -w /flow \
-            "$ORFS_IMAGE" \
-            /usr/bin/time -v -o /outputs/resources-time.txt make DESIGN_CONFIG=./designs/nangate45/ibex/config.mk WORK_HOME=/outputs OPENROAD_EXE=/OpenROAD-flow-scripts/tools/install/OpenROAD/bin/openroad YOSYS_EXE=/OpenROAD-flow-scripts/tools/install/yosys/bin/yosys 2>&1 | tee /tmp/ibex-stock/flow-console.log
-          END=$(date +%s)
-          echo "wallclock_s=$((END-START))" | tee /tmp/ibex-stock/resources.txt
-          echo "flow exit: ${PIPESTATUS[0]}"
+          python scripts/generate_openroad_baseline.py --task ibex \
+            --orfs-checkout "$GITHUB_WORKSPACE/orfs" \
+            --output /tmp/ibex-baseline.json \
+            --work-parent /tmp/ibex-baseline-runs \
+            --seed 7 \
+            --timeout-s "$FLOW_TIMEOUT_S"
+          python -c "import json; d=json.load(open('/tmp/ibex-baseline.json')); print(json.dumps({k: d.get(k) for k in ('status','task_id','task_version','metrics','tolerances')}, indent=1))"
 
-      - name: Verify final endpoint evidence
+      - name: Verify stock scores 0.5 and GCD baseline cannot grade Ibex
         run: |
-          set -euo pipefail
-          ROOT=/tmp/ibex-stock/outputs
-          find "$ROOT" -maxdepth 6 -name "6_report.json" | head
-          RPT=$(find "$ROOT" -name "6_report.json" | head -1)
-          test -n "$RPT" || { echo "NO 6_report.json"; exit 1; }
-          python3 -c "import json; d=json.load(open('$RPT')); print(json.dumps(d, indent=1)[:2000])"
-          FIN=$(find "$ROOT" -name "6_final.def" | head -1)
-          test -n "$FIN" || { echo "NO 6_final.def"; exit 1; }
-          echo "endpoint evidence ok"
+          python - <<'PY'
+          import json
+          from silicon_env.environments.openroad import baseline as bl, grader
+          from silicon_env.environments.openroad import config as gcd
+          from silicon_env.environments.openroad import ibex_config as ibex
+          from silicon_env.environments.openroad.metrics import GcdMetrics
+          rec = bl.load_baseline("/tmp/ibex-baseline.json")
+          rec = bl.validate_baseline(rec, task=ibex)
+          m = rec["metrics"]
+          cand = GcdMetrics(stage="final", schema="orfs-26Q2-final-v1",
+                            area_um2=m["area_um2"], wns_ns=m["wns_ns"], tns_ns=m["tns_ns"],
+                            routed_ok=True, drc_count=0, unconstrained_paths=0,
+                            valid=True, reasons=(), notes=(), raw_refs={})
+          ev = {"protected_hash": rec["protected_hash"], "orfs_commit": rec["orfs_commit"],
+                "image_pinned_ref": rec["image_pinned_ref"]}
+          g = grader.grade_candidate(cand, baseline_record=rec, evidence=ev, task=ibex)
+          assert (g.valid, g.reward) == (True, 0.5), g.to_dict()
+          print("ibex stock score:", g.reward, g.reason_codes)
+          # GCD baseline must not validate under ibex (and vice versa)
+          for mod, name in ((gcd, "gcd"), (ibex, "ibex")):
+              other = ibex if mod is gcd else gcd
+              try:
+                  bl.validate_baseline(bl.load_baseline(
+                      "silicon_env/environments/openroad/tasks/gcd/baseline.json"
+                      if mod is gcd else "/tmp/ibex-baseline.json"), task=other)
+              except Exception as exc:
+                  print(f"{name}-record under other task correctly rejected: {type(exc).__name__}")
+              else:
+                  raise SystemExit(f"CROSS-TASK LEAK: {name} record validated under other task")
+          PY
 
-      - name: Upload compact probe artifacts
+      - name: Upload compact baseline artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ibex-stock-probe
+          name: ibex-baseline-evidence
           retention-days: 7
           if-no-files-found: warn
           path: |
-            /tmp/ibex-stock/resources.txt
-            /tmp/ibex-stock/flow-console.log
-            /tmp/ibex-stock/outputs/**/6_report.json
-            /tmp/ibex-stock/outputs/**/6_finish.rpt
-            /tmp/ibex-stock/outputs/**/5_2_route.json
+            /tmp/ibex-baseline.json
+            /tmp/ibex-baseline-runs/**/flow-result.json
+            /tmp/ibex-baseline-runs/**/resources.txt
+            /tmp/ibex-baseline-runs/**/flow-console.log
+            /tmp/ibex-baseline-runs/**/logs/**/6_report.json
+            /tmp/ibex-baseline-runs/**/reports/**/6_finish.rpt
+            /tmp/ibex-baseline-runs/**/logs/**/5_2_route.json
